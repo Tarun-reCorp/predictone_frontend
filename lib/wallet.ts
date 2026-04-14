@@ -20,11 +20,6 @@ export function shortenAddress(addr: string, chars = 4): string {
   return `${addr.slice(0, chars + 2)}…${addr.slice(-chars)}`;
 }
 
-export function isMetaMaskInstalled(): boolean {
-  if (typeof window === "undefined") return false;
-  return !!(window as unknown as { ethereum?: { isMetaMask?: boolean } }).ethereum?.isMetaMask;
-}
-
 export function getChainName(chainId: number | null): string {
   if (!chainId) return "Unknown";
   return CHAIN_NAMES[chainId] ?? `Chain ${chainId}`;

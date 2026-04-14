@@ -145,7 +145,7 @@ export default function MerchantDashboardPage() {
                 <div className="flex-1">
                   <p className="text-sm font-medium text-foreground">No wallet connected</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Connect your MetaMask wallet to enable trading and transaction features.
+                    Connect your Trust Wallet via WalletConnect to enable trading and transaction features.
                   </p>
                 </div>
                 <button
@@ -160,20 +160,18 @@ export default function MerchantDashboardPage() {
                 </button>
               </div>
 
-              {/* MetaMask not installed */}
-              {!wallet.isInstalled && (
-                <div className="flex items-center justify-between rounded-lg bg-secondary border border-border px-4 py-3">
-                  <p className="text-xs text-muted-foreground">MetaMask extension not detected</p>
-                  <a
-                    href="https://metamask.io/download/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1 text-xs text-brand font-medium hover:underline"
-                  >
-                    Install MetaMask <ExternalLink className="h-3 w-3" />
-                  </a>
-                </div>
-              )}
+              {/* Trust Wallet info (WalletConnect — no browser extension needed) */}
+              <div className="flex items-center justify-between rounded-lg bg-secondary border border-border px-4 py-3">
+                <p className="text-xs text-muted-foreground">Scan QR with Trust Wallet or use the mobile deep link</p>
+                <a
+                  href="https://trustwallet.com/download"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-xs text-brand font-medium hover:underline"
+                >
+                  Get Trust Wallet <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
 
               {/* Error */}
               {wallet.error && (

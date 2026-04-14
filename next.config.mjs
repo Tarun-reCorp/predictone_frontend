@@ -1,5 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // WalletConnect uses some Node-only modules; tell webpack to ignore them on the client
+  webpack: (config) => {
+    config.externals.push("pino-pretty", "lokijs", "encoding");
+    return config;
+  },
   typescript: {
     ignoreBuildErrors: true,
   },

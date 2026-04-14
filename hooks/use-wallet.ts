@@ -1,116 +1,115 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import {
+  useWeb3Modal,
+  useWeb3ModalAccount,
+  useWeb3ModalProvider,
+  useDisconnect,
+} from "@web3modal/ethers/react";
 import { useAuth } from "@/contexts/auth-context";
-import { isMetaMaskInstalled } from "@/lib/wallet";
 
-type EthereumProvider = {
-  isMetaMask?: boolean;
-  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-  on: (event: string, handler: (...args: unknown[]) => void) => void;
-  removeListener: (event: string, handler: (...args: unknown[]) => void) => void;
-};
-
-function getEthereum(): EthereumProvider | null {
-  if (typeof window === "undefined") return null;
-  return (window as unknown as { ethereum?: EthereumProvider }).ethereum ?? null;
-}
+type Eip1193Request = (args: { method: string; params?: unknown[] }) => Promise<unknown>;
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 export function useWallet() {
   const { user, token, updateUser } = useAuth();
-  const [chainId, setChainId]           = useState<number | null>(null);
-  const [isConnecting, setIsConnecting] = useState(false);
+  const { open }                     = useWeb3Modal();
+  const { disconnect: wcDisconnect } = useDisconnect();
+  const { address, chainId, isConnected } = useWeb3ModalAccount();
+  const { walletProvider }           = useWeb3ModalProvider();
+
+  const [isConnecting, setIsConnecting]       = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
-  const [error, setError]               = useState<string | null>(null);
+  const [error, setError]                     = useState<string | null>(null);
 
-  // Stable ref for updateUser so event handlers don't go stale
-  const updateUserRef = useRef(updateUser);
-  const userRef       = useRef(user);
-  useEffect(() => { updateUserRef.current = updateUser; }, [updateUser]);
-  useEffect(() => { userRef.current = user; }, [user]);
+  // Use a ref to track the current session key (address + provider combo).
+  // If the key changes mid-flight (network switch), we ignore the stale request.
+  const sessionKeyRef  = useRef<string | null>(null);
+  const verifyingRef   = useRef(false);
 
-  // On mount (and when wallet connects), read chain + attach listeners
+  // ── Auto sign + verify when wallet connects ──────────────────────────────
   useEffect(() => {
-    const eth = getEthereum();
-    if (!eth) return;
+    if (!isConnected || !address || !walletProvider || !token) return;
 
-    // Fetch current chain silently
-    eth.request({ method: "eth_chainId" })
-      .then((id) => setChainId(parseInt(id as string, 16)))
-      .catch(() => {});
+    // Already linked — nothing to do
+    const saved = user?.walletAddress;
+    if (saved && saved.toLowerCase() === address.toLowerCase()) return;
 
-    const handleAccountsChanged = (raw: unknown) => {
-      const accounts = raw as string[];
-      // User revoked permission in MetaMask → clear wallet in UI (not DB)
-      if (accounts.length === 0 && userRef.current?.walletAddress) {
-        updateUserRef.current({ ...userRef.current, walletAddress: null });
-        setChainId(null);
+    // Build a session key: address + a stable id for this provider instance.
+    // This prevents re-triggering when the provider object reference changes
+    // (e.g. on network switch) for the SAME underlying wallet session.
+    const sessionKey = address.toLowerCase();
+
+    // Skip if we're already verifying FOR THIS ADDRESS
+    if (verifyingRef.current && sessionKeyRef.current === sessionKey) return;
+
+    // If a different address shows up mid-flight, let it proceed
+    verifyingRef.current  = true;
+    sessionKeyRef.current = sessionKey;
+    setIsConnecting(true);
+    setError(null);
+
+    (async () => {
+      try {
+        // 1. Get a one-time nonce message from the backend
+        const nonceRes  = await fetch(
+          `${API}/api/merchant/wallet/nonce?address=${address}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const nonceJson = await nonceRes.json();
+        if (!nonceRes.ok) throw new Error(nonceJson.message ?? "Failed to get nonce");
+        const message: string = nonceJson.data.message;
+
+        // Guard: if address changed while we were fetching the nonce, abort
+        if (sessionKeyRef.current !== address.toLowerCase()) return;
+
+        // 2. Ask the wallet to sign the message
+        //    personal_sign([message, address]) — plain string, address second
+        const request   = (walletProvider as { request: Eip1193Request }).request.bind(walletProvider);
+        const signature = (await request({
+          method: "personal_sign",
+          params: [message, address],
+        })) as string;
+
+        // 3. Send address + signature + the EXACT message that was signed.
+        //    Backend verifies against this message, not a potentially-overwritten nonce.
+        const verifyRes  = await fetch(`${API}/api/merchant/wallet/verify`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ address, signature, message }),
+        });
+        const verifyJson = await verifyRes.json();
+        if (!verifyRes.ok) throw new Error(verifyJson.message ?? "Wallet verification failed");
+
+        updateUser(verifyJson.data.user);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Connection failed";
+        if (
+          !msg.toLowerCase().includes("user rejected") &&
+          !msg.toLowerCase().includes("user denied") &&
+          !msg.toLowerCase().includes("cancelled")
+        ) {
+          setError(msg);
+        }
+        await wcDisconnect().catch(() => {});
+      } finally {
+        setIsConnecting(false);
+        verifyingRef.current = false;
       }
-    };
-
-    const handleChainChanged = (raw: unknown) => {
-      setChainId(parseInt(raw as string, 16));
-    };
-
-    eth.on("accountsChanged", handleAccountsChanged);
-    eth.on("chainChanged",    handleChainChanged);
-
-    return () => {
-      eth.removeListener("accountsChanged", handleAccountsChanged);
-      eth.removeListener("chainChanged",    handleChainChanged);
-    };
-  }, []); // run once — handlers use refs to stay current
+    })();
+  // walletProvider intentionally excluded — we key on address instead
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected, address, token]);
 
   const connect = useCallback(async () => {
     setError(null);
-
-    if (!isMetaMaskInstalled()) {
-      setError("MetaMask not installed. Please install the MetaMask browser extension.");
-      return;
-    }
-
-    const eth = getEthereum()!;
-    setIsConnecting(true);
-
-    try {
-      // 1. Request accounts (triggers MetaMask popup)
-      const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
-      const address  = accounts[0];
-      if (!address) throw new Error("No account selected in MetaMask");
-
-      // 2. Get current network
-      const chainHex = (await eth.request({ method: "eth_chainId" })) as string;
-      setChainId(parseInt(chainHex, 16));
-
-      // 3. Save to backend
-      const res  = await fetch(`${API}/api/merchant/connect-wallet`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ walletAddress: address }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.message ?? "Failed to save wallet");
-
-      updateUser(json.data.user);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Connection failed";
-      // Silently ignore user-cancelled MetaMask prompts
-      if (
-        !msg.toLowerCase().includes("user rejected") &&
-        !msg.toLowerCase().includes("user denied") &&
-        !msg.toLowerCase().includes("cancelled")
-      ) {
-        setError(msg);
-      }
-    } finally {
-      setIsConnecting(false);
-    }
-  }, [token, updateUser]);
+    await open();
+  }, [open]);
 
   const disconnect = useCallback(async () => {
     setError(null);
@@ -122,27 +121,27 @@ export function useWallet() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.message ?? "Failed to disconnect wallet");
+
       updateUser(json.data.user);
-      setChainId(null);
+      await wcDisconnect().catch(() => {});
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Disconnect failed");
     } finally {
       setIsDisconnecting(false);
     }
-  }, [token, updateUser]);
+  }, [token, updateUser, wcDisconnect]);
 
   const copyAddress = useCallback(async () => {
-    if (user?.walletAddress) {
-      await navigator.clipboard.writeText(user.walletAddress);
-    }
-  }, [user?.walletAddress]);
+    const addr = user?.walletAddress ?? address;
+    if (addr) await navigator.clipboard.writeText(addr);
+  }, [user?.walletAddress, address]);
 
   return {
     address:        user?.walletAddress ?? null,
-    chainId,
+    chainId:        (chainId as number) ?? null,
     isConnecting,
     isDisconnecting,
-    isInstalled:    isMetaMaskInstalled(),
+    isInstalled:    true,
     error,
     clearError:     () => setError(null),
     connect,

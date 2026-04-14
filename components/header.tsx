@@ -41,6 +41,7 @@ export function Header({ activeCategory = "", onCategoryChange, onSearch }: Head
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const moreRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const pathname = usePathname();
   const { user, loading, logout } = useAuth();
@@ -56,11 +57,14 @@ export function Header({ activeCategory = "", onCategoryChange, onSearch }: Head
     if (searchOpen && searchRef.current) searchRef.current.focus();
   }, [searchOpen]);
 
-  // Close user menu when clicking outside
+  // Close user menu and More dropdown when clicking outside
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
         setUserMenuOpen(false);
+      }
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
+        setShowMore(false);
       }
     };
     document.addEventListener("mousedown", handler);
@@ -305,7 +309,7 @@ export function Header({ activeCategory = "", onCategoryChange, onSearch }: Head
           {visibleNav.map((cat) => (
             <button
               key={cat.slug}
-              onClick={() => onCategoryChange?.(cat.slug)}
+              onClick={() => handleCategoryClick(cat.slug)}
               className={cn(
                 "relative flex shrink-0 items-center px-3 py-2.5 text-sm font-medium transition-colors whitespace-nowrap",
                 activeCategory === cat.slug
@@ -317,27 +321,38 @@ export function Header({ activeCategory = "", onCategoryChange, onSearch }: Head
             </button>
           ))}
           {moreNav.length > 0 && (
-            <div className="relative shrink-0">
+            <div className="relative shrink-0" ref={moreRef}>
               <button
                 onClick={() => setShowMore(!showMore)}
                 className={cn(
-                  "flex items-center gap-1 px-3 py-2.5 text-sm font-medium transition-colors whitespace-nowrap",
-                  "text-muted-foreground hover:text-foreground"
+                  "relative flex items-center gap-1 px-3 py-2.5 text-sm font-medium transition-colors whitespace-nowrap",
+                  moreNav.some((c) => c.slug === activeCategory)
+                    ? "text-foreground after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-brand after:rounded-t-sm"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 More
-                <ChevronDown className="h-3.5 w-3.5" />
+                {showMore ? (
+                  <ChevronUp className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5" />
+                )}
               </button>
               {showMore && (
-                <div className="absolute top-full left-0 mt-1 min-w-[140px] rounded-lg border border-border bg-card shadow-xl z-50">
+                <div className="absolute top-full left-0 mt-1 min-w-[140px] rounded-lg border border-border bg-card shadow-xl z-50 overflow-hidden">
                   {moreNav.map((cat) => (
                     <button
                       key={cat.slug}
                       onClick={() => {
-                        onCategoryChange?.(cat.slug);
+                        handleCategoryClick(cat.slug);
                         setShowMore(false);
                       }}
-                      className="flex w-full items-center px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                      className={cn(
+                        "flex w-full items-center px-4 py-2.5 text-sm transition-colors",
+                        activeCategory === cat.slug
+                          ? "text-foreground bg-secondary font-medium"
+                          : "text-muted-foreground hover:text-foreground hover:bg-secondary"
+                      )}
                     >
                       {cat.label}
                     </button>
