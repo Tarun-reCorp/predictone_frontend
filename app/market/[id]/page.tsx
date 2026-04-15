@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, notFound } from "next/navigation";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, ExternalLink, Clock, BarChart2, Droplets, Users } from "lucide-react";
 import {
@@ -18,6 +18,8 @@ import { FeaturedMarket } from "@/components/featured-market";
 import { MarketCard } from "@/components/market-card";
 import { OrderBook } from "@/components/order-book";
 import { Header } from "@/components/header";
+import { BuyModal } from "@/components/buy-modal";
+import { AuthModal } from "@/components/auth-modal";
 
 export default function MarketPage() {
   const { id } = useParams<{ id: string }>();
@@ -26,6 +28,18 @@ export default function MarketPage() {
   const [related, setRelated] = useState<PolyMarket[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFoundState, setNotFoundState] = useState(false);
+
+  // Buy modal state
+  const [buyOutcome, setBuyOutcome]     = useState<"Yes" | "No" | null>(null);
+  const [buyAmount, setBuyAmount]       = useState<number>(0);
+  const [buyModalOpen, setBuyModalOpen] = useState(false);
+  const [authModal, setAuthModal]       = useState<{ open: boolean; tab: "login" | "signup" }>({ open: false, tab: "login" });
+
+  const openBuy = (outcome: "Yes" | "No", amount = 0) => {
+    setBuyOutcome(outcome);
+    setBuyAmount(amount);
+    setBuyModalOpen(true);
+  };
 
   useEffect(() => {
     if (!id) return;
@@ -38,6 +52,13 @@ export default function MarketPage() {
         return;
       }
       setMarket(m);
+
+      // Auto-open buy modal if ?buy=yes or ?buy=no in URL (e.g. coming from market card)
+      if (typeof window !== "undefined") {
+        const buyParam = new URLSearchParams(window.location.search).get("buy");
+        if (buyParam === "yes") { setBuyOutcome("Yes"); setBuyModalOpen(true); }
+        else if (buyParam === "no") { setBuyOutcome("No"); setBuyModalOpen(true); }
+      }
 
       const [history, allMarkets] = await Promise.all([
         m.conditionId ? clientFetchPriceHistory(m.conditionId, "1w") : Promise.resolve([]),
@@ -110,7 +131,7 @@ export default function MarketPage() {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
           {/* Main content */}
           <div className="lg:col-span-3 space-y-6">
-            <FeaturedMarket market={market} priceHistory={priceHistory} />
+            <FeaturedMarket market={market} priceHistory={priceHistory} onBuy={openBuy} />
 
             {/* Stats row */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -155,8 +176,10 @@ export default function MarketPage() {
               </div>
               <div className="divide-y divide-border/30">
                 {outcomes.map((outcome, i) => {
-                  const pct = Math.round((prices[i] ?? 0.5) * 100);
+                  const pct   = Math.round((prices[i] ?? 0.5) * 100);
+                  const price = prices[i] ?? 0.5;
                   const isYes = i === 0;
+                  const typedOutcome = isYes ? "Yes" : "No";
                   return (
                     <div key={outcome} className="flex items-center gap-4 px-5 py-3">
                       <div className="flex-1">
@@ -168,11 +191,18 @@ export default function MarketPage() {
                           <div className={`h-full transition-all ${isYes ? "bg-yes" : "bg-no"}`} style={{ width: `${pct}%` }} />
                         </div>
                       </div>
-                      <button className={`shrink-0 rounded-lg px-4 py-1.5 text-sm font-semibold transition-all ${
-                        isYes ? "bg-yes/10 text-yes border border-yes/20 hover:bg-yes/20" : "bg-no/10 text-no border border-no/20 hover:bg-no/20"
-                      }`}>
+                      {market.conditionId && (
+                      <button
+                        onClick={() => openBuy(typedOutcome)}
+                        className={`shrink-0 rounded-lg px-4 py-1.5 text-sm font-semibold transition-all ${
+                          isYes
+                            ? "bg-yes/10 text-yes border border-yes/20 hover:bg-yes/20 active:bg-yes/30"
+                            : "bg-no/10  text-no  border border-no/20  hover:bg-no/20  active:bg-no/30"
+                        }`}
+                      >
                         Buy {pct}¢
                       </button>
+                    )}
                     </div>
                   );
                 })}
@@ -230,6 +260,30 @@ export default function MarketPage() {
           </div>
         )}
       </main>
+
+      {/* ── Buy Modal ── */}
+      {market.conditionId && (
+        <BuyModal
+          open={buyModalOpen}
+          onClose={() => setBuyModalOpen(false)}
+          outcome={buyOutcome}
+          price={buyOutcome === "Yes" ? (prices[0] ?? 0.5) : (prices[1] ?? 0.5)}
+          conditionId={market.conditionId}
+          marketQuestion={market.question}
+          initialAmount={buyAmount}
+          onLoginRequired={() => setAuthModal({ open: true, tab: "login" })}
+          onWalletRequired={() => {
+            window.location.href = "/merchant";
+          }}
+        />
+      )}
+
+      {/* ── Auth Modal (triggered from BuyModal when not logged in) ── */}
+      <AuthModal
+        open={authModal.open}
+        defaultTab={authModal.tab}
+        onClose={() => setAuthModal((s) => ({ ...s, open: false }))}
+      />
     </div>
   );
 }

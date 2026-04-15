@@ -6,6 +6,8 @@ export interface AuthUser {
   email: string;
   role: "admin" | "merchant";
   walletAddress: string | null;
+  walletBalance: number;
+  totalCommissionPaid: number;
   status: "active" | "blocked";
   createdAt: string;
   updatedAt: string;

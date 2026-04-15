@@ -4,29 +4,37 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  LayoutDashboard, TrendingUp, BarChart2,
-  Settings, ChevronRight, Shield, Bell,
-  CircleDot, Users, LogOut, ChevronDown,
+  LayoutDashboard, TrendingUp, BarChart2, Settings,
+  ChevronRight, Shield, Bell, CircleDot, Users,
+  LogOut, ChevronDown, ShoppingBag, ArrowUpDown,
+  Receipt, ArrowUpCircle, Wallet, CheckCircle2, AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
+import { useAdminWallet } from "@/hooks/use-admin-wallet";
+import { AdminWalletConnect } from "@/components/admin-wallet-connect";
 
 const NAV_ITEMS = [
-  { label: "Overview",  href: "/admin",           icon: LayoutDashboard },
-  { label: "Merchants", href: "/admin/merchants",  icon: Users },
-  { label: "Markets",   href: "/admin/markets",    icon: TrendingUp },
-  { label: "Trades",    href: "/admin/trades",     icon: BarChart2 },
-  { label: "Settings",  href: "/admin/settings",   icon: Settings },
+  { label: "Overview",      href: "/admin",                icon: LayoutDashboard },
+  { label: "Merchants",     href: "/admin/merchants",      icon: Users           },
+  { label: "Commission",    href: "/admin/commission",     icon: Receipt         },
+  { label: "Fund Requests", href: "/admin/fund-requests",  icon: ArrowUpCircle   },
+  { label: "Markets",       href: "/admin/markets",        icon: TrendingUp      },
+  { label: "Trades",        href: "/admin/trades",         icon: BarChart2       },
+  { label: "Orders",        href: "/admin/orders",         icon: ShoppingBag     },
+  { label: "Transactions",  href: "/admin/transactions",   icon: ArrowUpDown     },
+  { label: "Settings",      href: "/admin/settings",       icon: Settings        },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
+  const router   = useRouter();
   const { user, loading, logout } = useAuth();
-  const [collapsed, setCollapsed] = useState(false);
+  const { info: tradingWallet } = useAdminWallet();
+
+  const [collapsed, setCollapsed]       = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
-  // Auth guard
   useEffect(() => {
     if (!loading && !user) router.replace("/");
     if (!loading && user && user.role !== "admin") router.replace("/merchant");
@@ -34,25 +42,23 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   if (loading || !user || user.role !== "admin") return null;
 
-  const initials = user.name
-    .split(" ")
-    .slice(0, 2)
-    .map((w) => w[0].toUpperCase())
-    .join("");
+  const initials = user.name.split(" ").slice(0, 2).map((w) => w[0].toUpperCase()).join("");
 
-  const breadcrumb =
-    pathname === "/admin"
-      ? "Overview"
-      : pathname.split("/admin/")[1]?.replace(/-/g, " ") ?? "Admin";
+  const activeItem = NAV_ITEMS.find((item) =>
+    item.href === "/admin"
+      ? pathname === "/admin"
+      : pathname.startsWith(item.href)
+  );
+  const breadcrumb = activeItem?.label ?? "Admin";
 
   return (
     <div className="flex min-h-screen bg-background">
-      {/* Sidebar */}
+      {/* ── Sidebar ── */}
       <aside className={cn(
         "flex flex-col border-r border-border bg-[oklch(0.13_0.005_240)] transition-all duration-200 shrink-0",
         collapsed ? "w-14" : "w-56"
       )}>
-        {/* Sidebar header */}
+        {/* Header */}
         <div className="flex h-14 items-center justify-between px-3 border-b border-border">
           {!collapsed && (
             <Link href="/" className="flex items-center gap-2">
@@ -83,14 +89,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </button>
         </div>
 
-        {/* Nav items */}
+        {/* Nav */}
         <nav className="flex flex-col gap-0.5 p-2 flex-1">
           {NAV_ITEMS.map((item) => {
-            const isActive = pathname === item.href || (item.href !== "/admin" && pathname.startsWith(item.href));
+            const isActive = item.href === "/admin"
+              ? pathname === "/admin"
+              : pathname.startsWith(item.href);
             return (
               <Link
                 key={item.href}
                 href={item.href}
+                title={item.label}
                 className={cn(
                   "flex items-center gap-3 rounded-md px-2.5 py-2 text-sm font-medium transition-colors",
                   isActive
@@ -107,6 +116,35 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             );
           })}
         </nav>
+
+        {/* Trading wallet status pill */}
+        {tradingWallet && (
+          <div className={cn("px-2 pb-1", collapsed && "flex justify-center")}>
+            <div className={cn(
+              "flex items-center gap-2 rounded-md border px-2.5 py-2",
+              tradingWallet.configured
+                ? "border-yes/20 bg-yes/10"
+                : "border-destructive/20 bg-destructive/10",
+              collapsed && "justify-center"
+            )}>
+              {tradingWallet.configured
+                ? <CheckCircle2 className="h-3.5 w-3.5 text-yes shrink-0" />
+                : <AlertCircle  className="h-3.5 w-3.5 text-destructive shrink-0" />
+              }
+              {!collapsed && (
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] text-muted-foreground leading-tight">Trading Wallet</p>
+                  <p className={cn("text-[10px] font-mono leading-tight truncate",
+                    tradingWallet.configured ? "text-yes" : "text-destructive")}>
+                    {tradingWallet.configured
+                      ? `${tradingWallet.address?.slice(0, 6)}…${tradingWallet.address?.slice(-4)}`
+                      : "Not configured"}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* User footer */}
         <div className="p-2 border-t border-border">
@@ -125,7 +163,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 </div>
                 <ChevronDown className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform shrink-0", userMenuOpen && "rotate-180")} />
               </button>
-
               {userMenuOpen && (
                 <div className="absolute bottom-full left-0 right-0 mb-1 rounded-lg border border-border bg-card shadow-xl overflow-hidden">
                   <button
@@ -150,20 +187,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
       </aside>
 
-      {/* Main */}
+      {/* ── Main ── */}
       <div className="flex flex-col flex-1 min-w-0">
-        {/* Top bar */}
         <header className="flex h-14 items-center justify-between border-b border-border px-6 bg-background/80 backdrop-blur-sm sticky top-0 z-40">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Link href="/" className="hover:text-foreground transition-colors">PredictOne</Link>
             <ChevronRight className="h-3.5 w-3.5" />
-            <span className="text-foreground font-medium capitalize">{breadcrumb}</span>
+            <span className="text-foreground font-medium">{breadcrumb}</span>
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 rounded-md border border-yes/30 bg-yes/10 px-2.5 py-1">
               <CircleDot className="h-3 w-3 text-yes" />
               <span className="text-xs font-medium text-yes">Live</span>
             </div>
+            <AdminWalletConnect />
             <button className="relative flex h-8 w-8 items-center justify-center rounded-md border border-border hover:bg-secondary transition-colors">
               <Bell className="h-4 w-4 text-muted-foreground" />
             </button>
@@ -172,11 +209,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </div>
           </div>
         </header>
-
-        {/* Page content */}
-        <main className="flex-1 overflow-auto p-6">
-          {children}
-        </main>
+        <main className="flex-1 overflow-auto p-6">{children}</main>
       </div>
     </div>
   );

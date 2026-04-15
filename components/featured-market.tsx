@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 interface FeaturedMarketProps {
   market: PolyMarket;
   priceHistory?: PriceHistory[]; // optional initial data (ignored — component self-fetches)
+  onBuy?: (outcome: "Yes" | "No", amount: number) => void;
 }
 
 const INTERVALS = ["1H", "1D", "1W", "1M", "ALL"] as const;
@@ -50,7 +51,7 @@ function formatDate(timestamp: number, interval: Interval) {
   return d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-export function FeaturedMarket({ market }: FeaturedMarketProps) {
+export function FeaturedMarket({ market, onBuy }: FeaturedMarketProps) {
   const [interval, setInterval] = useState<Interval>("1W");
   const [history, setHistory]   = useState<PriceHistory[]>([]);
   const [chartLoading, setChartLoading] = useState(false);
@@ -87,7 +88,10 @@ export function FeaturedMarket({ market }: FeaturedMarketProps) {
     return () => { cancelled = true; };
   }, [tokenId, interval]);
 
-  const chartData = history.slice(-200).map((p) => ({
+  // Ensure history is an array (defensive check for API errors)
+  const historyArray = Array.isArray(history) ? history : [];
+
+  const chartData = historyArray.slice(-200).map((p) => ({
     time:  formatDate(p.t, interval),
     price: Math.round(p.p * 100),
   }));
@@ -297,6 +301,7 @@ export function FeaturedMarket({ market }: FeaturedMarketProps) {
 
           {/* Buy button */}
           <button
+            onClick={() => onBuy?.(tradeType === "yes" ? "Yes" : "No", parseFloat(quantity) || 0)}
             className={cn(
               "w-full rounded-lg py-2.5 text-sm font-bold transition-all",
               tradeType === "yes"
@@ -307,7 +312,9 @@ export function FeaturedMarket({ market }: FeaturedMarketProps) {
             Buy {tradeType === "yes" ? "Yes" : "No"} — ${quantity || "0"}
           </button>
 
-          <p className="text-center text-xs text-muted-foreground">Connect wallet to trade</p>
+          <p className="text-center text-xs text-muted-foreground">
+            {onBuy ? "Click above to place order" : "Connect wallet to trade"}
+          </p>
         </div>
       </div>
     </div>

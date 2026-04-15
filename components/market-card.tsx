@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { TrendingUp, Users, BarChart2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { BarChart2 } from "lucide-react";
 import { type PolyMarket, parseOutcomes, parseOutcomePrices, formatVolume } from "@/lib/polymarket";
 import { cn } from "@/lib/utils";
 
@@ -11,6 +12,8 @@ interface MarketCardProps {
 }
 
 export function MarketCard({ market }: MarketCardProps) {
+  const router = useRouter();
+  const marketPath = `/market/${market.slug || market.id}`;
   const outcomes = parseOutcomes(market.outcomes);
   const prices = parseOutcomePrices(market.outcomePrices);
   const yesPrice = prices[0] ?? 0.5;
@@ -69,7 +72,7 @@ export function MarketCard({ market }: MarketCardProps) {
       {/* Buy buttons */}
       <div className="flex gap-2">
         <button
-          onClick={(e) => e.preventDefault()}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`${marketPath}?buy=yes`); }}
           className={cn(
             "flex-1 rounded-lg py-1.5 text-xs font-semibold transition-all",
             "bg-yes/10 text-yes hover:bg-yes/20 border border-yes/20"
@@ -78,7 +81,7 @@ export function MarketCard({ market }: MarketCardProps) {
           Buy Yes {yesPct}¢
         </button>
         <button
-          onClick={(e) => e.preventDefault()}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`${marketPath}?buy=no`); }}
           className={cn(
             "flex-1 rounded-lg py-1.5 text-xs font-semibold transition-all",
             "bg-no/10 text-no hover:bg-no/20 border border-no/20"

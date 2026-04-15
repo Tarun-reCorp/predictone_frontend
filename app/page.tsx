@@ -142,6 +142,7 @@ function LoginForm() {
 
 /* ── Markets feed (shown when logged in) ── */
 function MarketsFeedPage() {
+  const router = useRouter();
   const [activeCategory, setActiveCategory] = useState("");
   const [markets, setMarkets] = useState<PolyMarket[]>([]);
   const [leaderboard, setLeaderboard] = useState<Leaderboard[]>([]);
@@ -208,7 +209,13 @@ function MarketsFeedPage() {
           </aside>
           <main className="flex flex-col gap-4 min-w-0">
             {featured && !loading && (
-              <FeaturedMarket market={featured} />
+              <FeaturedMarket
+                market={featured}
+                onBuy={(outcome) => {
+                  const path = `/market/${featured.slug || featured.id}`;
+                  router.push(`${path}?buy=${outcome.toLowerCase()}`);
+                }}
+              />
             )}
             <MarketsFeed
               markets={filteredMarkets}

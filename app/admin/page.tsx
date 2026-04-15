@@ -3,22 +3,119 @@
 import { useEffect, useState } from "react";
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
 import {
-  TrendingUp, TrendingDown, BarChart2, Users, Activity, Droplets,
-  ArrowUpRight, ArrowDownRight, RefreshCw, Clock
+  TrendingUp, TrendingDown, Users, Activity, Droplets,
+  ArrowUpRight, ArrowDownRight, RefreshCw, Clock,
+  ShoppingBag, ArrowUpDown, ChevronLeft, ChevronRight,
+  Hash, DollarSign, CheckCheck, Timer, Receipt, XCircle,
+  CheckCircle2, AlertCircle,
 } from "lucide-react";
 import { clientFetchMarkets, formatVolume, type PolyMarket } from "@/lib/polymarket";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/auth-context";
+import { useAdminWallet } from "@/hooks/use-admin-wallet";
+
+const BACKEND = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+
+// ── Types ──────────────────────────────────────────────────────────────────────
+
+interface AdminOrder {
+  _id: string;
+  merchantId?: { name?: string; email?: string } | string;
+  conditionId: string;
+  marketQuestion?: string;
+  outcome: "Yes" | "No";
+  side: "buy" | "sell";
+  amount: number;
+  price: number;
+  status: "pending" | "submitted" | "matched" | "settled" | "failed" | "cancelled";
+  createdAt: string;
+}
+
+interface AdminTransaction {
+  _id: string;
+  merchantId?: { name?: string; email?: string } | string;
+  type: string;
+  amount: number;
+  currency: string;
+  status: "pending" | "confirmed" | "failed";
+  description?: string;
+  createdAt: string;
+}
+
+// ── Badge colour maps ──────────────────────────────────────────────────────────
+
+const ORDER_STATUS_STYLE: Record<string, string> = {
+  pending:   "bg-chart-4/15 text-chart-4",
+  submitted: "bg-blue-500/15 text-blue-400",
+  matched:   "bg-brand/15 text-brand",
+  settled:   "bg-yes/15 text-yes",
+  failed:    "bg-no/15 text-no",
+  cancelled: "bg-muted-foreground/15 text-muted-foreground",
+};
+
+const TX_STATUS_STYLE: Record<string, string> = {
+  pending:   "bg-chart-4/15 text-chart-4",
+  confirmed: "bg-yes/15 text-yes",
+  failed:    "bg-no/15 text-no",
+};
+
+function fmtDate(iso: string) {
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "short", day: "numeric", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
+}
+function fmtAmount(n: number) { return `$${n.toFixed(2)}`; }
+
+// ── Shared sub-components ──────────────────────────────────────────────────────
+
+function SummaryCard({
+  icon: Icon, label, value, accent, bg,
+}: { icon: React.ElementType; label: string; value: string; accent: string; bg: string }) {
+  return (
+    <div className="rounded-xl border border-border bg-card p-4 flex items-center gap-3">
+      <div className={cn("flex h-9 w-9 items-center justify-center rounded-lg shrink-0", bg)}>
+        <Icon className={cn("h-4 w-4", accent)} />
+      </div>
+      <div>
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <p className={cn("text-lg font-bold font-mono mt-0.5", accent)}>{value}</p>
+      </div>
+    </div>
+  );
+}
+
+function Pagination({
+  page, totalPages, onChange,
+}: { page: number; totalPages: number; onChange: (p: number) => void }) {
+  return (
+    <div className="flex items-center justify-between px-5 py-3 border-t border-border">
+      <span className="text-xs text-muted-foreground">Page {page} of {totalPages}</span>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => onChange(page - 1)}
+          disabled={page <= 1}
+          className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-40 transition-colors"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" /> Prev
+        </button>
+        <button
+          onClick={() => onChange(page + 1)}
+          disabled={page >= totalPages}
+          className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-40 transition-colors"
+        >
+          Next <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function StatCard({
   label, value, sub, change, changeUp, icon: Icon, accent
 }: {
-  label: string;
-  value: string;
-  sub?: string;
-  change?: string;
-  changeUp?: boolean;
-  icon: React.ElementType;
-  accent?: string;
+  label: string; value: string; sub?: string; change?: string;
+  changeUp?: boolean; icon: React.ElementType; accent?: string;
 }) {
   return (
     <div className="rounded-xl border border-border bg-card p-5 flex flex-col gap-3">
@@ -58,7 +155,6 @@ function MiniChart({ data, color }: { data: { v: number }[]; color: string }) {
   );
 }
 
-// Generate synthetic time-series for sparklines
 function genSeries(base: number, len = 24, vol = 0.08) {
   const arr = [];
   let v = base;
@@ -86,12 +182,243 @@ function VolumeBar({ data }: { data: { name: string; v: number }[] }) {
   );
 }
 
+// ── Admin Orders section ───────────────────────────────────────────────────────
+
+function AdminOrdersSection({
+  orders, loading, page, totalPages, total, onPageChange,
+}: {
+  orders: AdminOrder[]; loading: boolean; page: number;
+  totalPages: number; total: number; onPageChange: (p: number) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-2">
+        <ShoppingBag className="h-4 w-4 text-brand" />
+        <h2 className="text-base font-bold text-foreground">All Orders</h2>
+        {total > 0 && (
+          <span className="rounded-full bg-brand/20 text-brand text-xs font-bold px-2 py-0.5">{total}</span>
+        )}
+      </div>
+
+      {!loading && orders.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <SummaryCard icon={Hash}       label="Total Orders" value={String(total)}
+            accent="text-brand"   bg="bg-brand/10" />
+          <SummaryCard icon={DollarSign} label="Page Volume"
+            value={fmtAmount(orders.reduce((s, o) => s + o.amount, 0))}
+            accent="text-chart-4" bg="bg-chart-4/10" />
+          <SummaryCard icon={CheckCheck} label="Settled"
+            value={String(orders.filter((o) => o.status === "settled").length)}
+            accent="text-yes"     bg="bg-yes/10" />
+          <SummaryCard icon={Timer}      label="Pending"
+            value={String(orders.filter((o) => o.status === "pending" || o.status === "submitted").length)}
+            accent="text-chart-4" bg="bg-chart-4/10" />
+        </div>
+      )}
+
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
+        {loading ? (
+          <div className="flex items-center justify-center py-14">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+          </div>
+        ) : orders.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-14 text-center gap-2">
+            <ShoppingBag className="h-8 w-8 text-muted-foreground/30" />
+            <p className="text-sm text-muted-foreground">No orders found</p>
+          </div>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border bg-secondary/20">
+                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">#</th>
+                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Merchant</th>
+                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Market</th>
+                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Outcome</th>
+                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Side</th>
+                    <th className="px-4 py-3 text-right font-medium text-muted-foreground">Amount</th>
+                    <th className="px-4 py-3 text-right font-medium text-muted-foreground">Price</th>
+                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
+                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/50">
+                  {orders.map((order, idx) => {
+                    const merchant = typeof order.merchantId === "object" ? order.merchantId : null;
+                    return (
+                      <tr key={order._id} className="hover:bg-secondary/10 transition-colors">
+                        <td className="px-4 py-3 text-muted-foreground font-mono">{(page - 1) * 10 + idx + 1}</td>
+                        <td className="px-4 py-3 text-foreground">
+                          {merchant?.name ?? (typeof order.merchantId === "string" ? order.merchantId.slice(0, 8) + "…" : "—")}
+                        </td>
+                        <td className="px-4 py-3 max-w-[180px]">
+                          <p className="truncate text-foreground font-medium">
+                            {order.marketQuestion || order.conditionId.slice(0, 16) + "…"}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={cn(
+                            "rounded-full px-2 py-0.5 font-semibold text-[10px]",
+                            order.outcome === "Yes" ? "bg-yes/15 text-yes" : "bg-no/15 text-no"
+                          )}>
+                            {order.outcome}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 capitalize text-muted-foreground">{order.side}</td>
+                        <td className="px-4 py-3 text-right font-mono text-foreground">{fmtAmount(order.amount)}</td>
+                        <td className="px-4 py-3 text-right font-mono text-foreground">{(order.price * 100).toFixed(1)}¢</td>
+                        <td className="px-4 py-3">
+                          <span className={cn(
+                            "rounded-full px-2 py-0.5 font-semibold text-[10px] capitalize",
+                            ORDER_STATUS_STYLE[order.status] ?? "bg-secondary text-muted-foreground"
+                          )}>
+                            {order.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{fmtDate(order.createdAt)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <Pagination page={page} totalPages={totalPages} onChange={onPageChange} />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Admin Transactions section ─────────────────────────────────────────────────
+
+function AdminTransactionsSection({
+  txns, loading, page, totalPages, total, onPageChange,
+}: {
+  txns: AdminTransaction[]; loading: boolean; page: number;
+  totalPages: number; total: number; onPageChange: (p: number) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-2">
+        <ArrowUpDown className="h-4 w-4 text-brand" />
+        <h2 className="text-base font-bold text-foreground">All Transactions</h2>
+        {total > 0 && (
+          <span className="rounded-full bg-brand/20 text-brand text-xs font-bold px-2 py-0.5">{total}</span>
+        )}
+      </div>
+
+      {!loading && txns.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <SummaryCard icon={Receipt}    label="Total Txns"  value={String(total)}
+            accent="text-brand"   bg="bg-brand/10" />
+          <SummaryCard icon={DollarSign} label="Page Volume"
+            value={fmtAmount(txns.reduce((s, t) => s + t.amount, 0))}
+            accent="text-chart-4" bg="bg-chart-4/10" />
+          <SummaryCard icon={CheckCheck} label="Confirmed"
+            value={String(txns.filter((t) => t.status === "confirmed").length)}
+            accent="text-yes"     bg="bg-yes/10" />
+          <SummaryCard icon={XCircle}    label="Failed"
+            value={String(txns.filter((t) => t.status === "failed").length)}
+            accent="text-no"      bg="bg-no/10" />
+        </div>
+      )}
+
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
+        {loading ? (
+          <div className="flex items-center justify-center py-14">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+          </div>
+        ) : txns.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-14 text-center gap-2">
+            <ArrowUpDown className="h-8 w-8 text-muted-foreground/30" />
+            <p className="text-sm text-muted-foreground">No transactions found</p>
+          </div>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border bg-secondary/20">
+                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">#</th>
+                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Merchant</th>
+                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Type</th>
+                    <th className="px-4 py-3 text-right font-medium text-muted-foreground">Amount</th>
+                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Description</th>
+                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
+                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/50">
+                  {txns.map((tx, idx) => {
+                    const merchant = typeof tx.merchantId === "object" ? tx.merchantId : null;
+                    return (
+                      <tr key={tx._id} className="hover:bg-secondary/10 transition-colors">
+                        <td className="px-4 py-3 text-muted-foreground font-mono">{(page - 1) * 10 + idx + 1}</td>
+                        <td className="px-4 py-3 text-foreground">
+                          {merchant?.name ?? (typeof tx.merchantId === "string" ? tx.merchantId.slice(0, 8) + "…" : "—")}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="capitalize text-foreground font-medium">
+                            {tx.type.replace(/_/g, " ")}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono text-foreground">
+                          {fmtAmount(tx.amount)}{" "}
+                          <span className="text-muted-foreground">{tx.currency}</span>
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground max-w-[200px]">
+                          <p className="truncate">{tx.description || "—"}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={cn(
+                            "rounded-full px-2 py-0.5 font-semibold text-[10px] capitalize",
+                            TX_STATUS_STYLE[tx.status] ?? "bg-secondary text-muted-foreground"
+                          )}>
+                            {tx.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{fmtDate(tx.createdAt)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <Pagination page={page} totalPages={totalPages} onChange={onPageChange} />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Main overview page ─────────────────────────────────────────────────────────
+
 export default function AdminOverview() {
-  const [markets, setMarkets] = useState<PolyMarket[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { token } = useAuth();
+  const { info: tradingWallet } = useAdminWallet();
+
+  const [markets, setMarkets]         = useState<PolyMarket[]>([]);
+  const [loading, setLoading]         = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
-  const load = async () => {
+  // Orders
+  const [adminOrders, setAdminOrders]           = useState<AdminOrder[]>([]);
+  const [ordersLoading, setOrdersLoading]       = useState(true);
+  const [ordersPage, setOrdersPage]             = useState(1);
+  const [ordersTotalPages, setOrdersTotalPages] = useState(1);
+  const [ordersTotal, setOrdersTotal]           = useState(0);
+
+  // Transactions
+  const [adminTxns, setAdminTxns]               = useState<AdminTransaction[]>([]);
+  const [txnsLoading, setTxnsLoading]           = useState(true);
+  const [txnsPage, setTxnsPage]                 = useState(1);
+  const [txnsTotalPages, setTxnsTotalPages]     = useState(1);
+  const [txnsTotal, setTxnsTotal]               = useState(0);
+
+  const loadMarkets = async () => {
     setLoading(true);
     const data = await clientFetchMarkets({ limit: 40, active: true, order: "volume", ascending: false });
     setMarkets(data);
@@ -99,12 +426,50 @@ export default function AdminOverview() {
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { loadMarkets(); }, []);
 
-  const totalVolume = markets.reduce((s, m) => s + (m.volumeNum ?? m.volume ?? 0), 0);
+  useEffect(() => {
+    if (!token) return;
+    setOrdersLoading(true);
+    fetch(`${BACKEND}/api/admin/orders?page=${ordersPage}&limit=10`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        const list       = data.data ?? data.docs ?? [];
+        const totalPages = data.meta?.totalPages ?? data.totalPages ?? 1;
+        const total      = data.meta?.total ?? data.total ?? list.length;
+        setAdminOrders(list);
+        setOrdersTotalPages(totalPages);
+        setOrdersTotal(total);
+      })
+      .catch(() => setAdminOrders([]))
+      .finally(() => setOrdersLoading(false));
+  }, [token, ordersPage]);
+
+  useEffect(() => {
+    if (!token) return;
+    setTxnsLoading(true);
+    fetch(`${BACKEND}/api/admin/transactions?page=${txnsPage}&limit=10`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        const list       = data.data ?? data.docs ?? [];
+        const totalPages = data.meta?.totalPages ?? data.totalPages ?? 1;
+        const total      = data.meta?.total ?? data.total ?? list.length;
+        setAdminTxns(list);
+        setTxnsTotalPages(totalPages);
+        setTxnsTotal(total);
+      })
+      .catch(() => setAdminTxns([]))
+      .finally(() => setTxnsLoading(false));
+  }, [token, txnsPage]);
+
+  const totalVolume    = markets.reduce((s, m) => s + (m.volumeNum ?? m.volume ?? 0), 0);
   const totalLiquidity = markets.reduce((s, m) => s + (m.liquidityNum ?? m.liquidity ?? 0), 0);
-  const activeCount = markets.filter((m) => m.active && !m.closed).length;
-  const closedCount = markets.filter((m) => m.closed).length;
+  const activeCount    = markets.filter((m) => m.active && !m.closed).length;
+  const closedCount    = markets.filter((m) => m.closed).length;
 
   const weeklyVolData = [
     { name: "Mon", v: totalVolume * 0.11 },
@@ -120,7 +485,7 @@ export default function AdminOverview() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* ── Header ── */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground tracking-tight">Overview</h1>
@@ -136,7 +501,7 @@ export default function AdminOverview() {
             </div>
           )}
           <button
-            onClick={load}
+            onClick={loadMarkets}
             disabled={loading}
             className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-50"
           >
@@ -146,43 +511,55 @@ export default function AdminOverview() {
         </div>
       </div>
 
-      {/* Stat cards */}
+      {/* ── Trading wallet card ── */}
+      {tradingWallet && (
+        <div className={cn(
+          "rounded-xl border p-5 flex items-center gap-4",
+          tradingWallet.configured
+            ? "border-yes/20 bg-yes/5"
+            : "border-destructive/20 bg-destructive/5"
+        )}>
+          <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl shrink-0",
+            tradingWallet.configured ? "bg-yes/15" : "bg-destructive/15")}>
+            {tradingWallet.configured
+              ? <CheckCircle2 className="h-5 w-5 text-yes" />
+              : <AlertCircle  className="h-5 w-5 text-destructive" />
+            }
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-foreground">
+              Trading Wallet {tradingWallet.configured ? "Configured" : "Not Configured"}
+            </p>
+            {tradingWallet.configured ? (
+              <p className="text-xs font-mono text-muted-foreground mt-0.5 truncate">
+                {tradingWallet.address}
+                {tradingWallet.apiKeyConfigured && (
+                  <span className="ml-2 text-yes font-sans">· API Key: {tradingWallet.apiKey}</span>
+                )}
+              </p>
+            ) : (
+              <p className="text-xs text-destructive mt-0.5">
+                Set POLY_PRIVATE_KEY in .env to enable order execution
+              </p>
+            )}
+          </div>
+          <span className={cn("text-[10px] font-semibold rounded-full px-2.5 py-1",
+            tradingWallet.configured ? "bg-yes/15 text-yes" : "bg-destructive/15 text-destructive")}>
+            {tradingWallet.configured ? "All orders routed here" : "Orders blocked"}
+          </span>
+        </div>
+      )}
+
+      {/* ── Stat cards ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          label="Total Volume"
-          value={formatVolume(totalVolume)}
-          sub="All active markets"
-          change="+12.4% vs last week"
-          changeUp
-          icon={TrendingUp}
-        />
-        <StatCard
-          label="Liquidity"
-          value={formatVolume(totalLiquidity)}
-          sub="Open interest"
-          change="+5.2% vs last week"
-          changeUp
-          icon={Droplets}
-        />
-        <StatCard
-          label="Active Markets"
-          value={String(activeCount)}
-          sub={`${closedCount} resolved`}
-          change="+3 new today"
-          changeUp
-          icon={Activity}
-        />
-        <StatCard
-          label="Traders"
-          value="—"
-          sub="Requires auth"
-          icon={Users}
-        />
+        <StatCard label="Total Volume"   value={formatVolume(totalVolume)}   sub="All active markets" change="+12.4% vs last week" changeUp icon={TrendingUp} />
+        <StatCard label="Liquidity"      value={formatVolume(totalLiquidity)} sub="Open interest"     change="+5.2% vs last week"  changeUp icon={Droplets} />
+        <StatCard label="Active Markets" value={String(activeCount)} sub={`${closedCount} resolved`}  change="+3 new today"        changeUp icon={Activity} />
+        <StatCard label="Traders"        value="—"                   sub="Requires auth"                                                    icon={Users} />
       </div>
 
-      {/* Charts row */}
+      {/* ── Charts row ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Volume by day */}
         <div className="lg:col-span-2 rounded-xl border border-border bg-card p-5">
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -198,15 +575,14 @@ export default function AdminOverview() {
           )}
         </div>
 
-        {/* Market status breakdown */}
         <div className="rounded-xl border border-border bg-card p-5">
           <p className="text-sm font-semibold text-foreground mb-4">Market Status</p>
           <div className="space-y-3">
             {[
-              { label: "Active", count: activeCount, color: "bg-yes", pct: markets.length ? (activeCount / markets.length) * 100 : 0 },
-              { label: "Closed / Resolved", count: closedCount, color: "bg-no", pct: markets.length ? (closedCount / markets.length) * 100 : 0 },
-              { label: "Featured", count: markets.filter((m) => m.featured).length, color: "bg-brand", pct: markets.length ? (markets.filter((m) => m.featured).length / markets.length) * 100 : 0 },
-              { label: "New", count: markets.filter((m) => m.new).length, color: "bg-chart-4", pct: markets.length ? (markets.filter((m) => m.new).length / markets.length) * 100 : 0 },
+              { label: "Active",           count: activeCount,                              color: "bg-yes",     pct: markets.length ? (activeCount / markets.length) * 100 : 0 },
+              { label: "Closed / Resolved",count: closedCount,                              color: "bg-no",      pct: markets.length ? (closedCount / markets.length) * 100 : 0 },
+              { label: "Featured",         count: markets.filter((m) => m.featured).length, color: "bg-brand",   pct: markets.length ? (markets.filter((m) => m.featured).length / markets.length) * 100 : 0 },
+              { label: "New",              count: markets.filter((m) => m.new).length,      color: "bg-chart-4", pct: markets.length ? (markets.filter((m) => m.new).length / markets.length) * 100 : 0 },
             ].map((row) => (
               <div key={row.label}>
                 <div className="flex justify-between text-xs mb-1">
@@ -222,13 +598,13 @@ export default function AdminOverview() {
         </div>
       </div>
 
-      {/* Sparkline metrics */}
+      {/* ── Sparklines ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: "Volume Trend (24h)", color: "oklch(0.6 0.2 250)", val: formatVolume(totalVolume * 0.04) },
-          { label: "New Markets", color: "oklch(0.65 0.18 145)", val: String(markets.filter((m) => m.new).length) },
-          { label: "Avg Liquidity", color: "oklch(0.75 0.15 60)", val: markets.length ? formatVolume(totalLiquidity / markets.length) : "$0" },
-          { label: "Featured Markets", color: "oklch(0.7 0.18 300)", val: String(markets.filter((m) => m.featured).length) },
+          { label: "Volume Trend (24h)", color: "oklch(0.6 0.2 250)",  val: formatVolume(totalVolume * 0.04) },
+          { label: "New Markets",        color: "oklch(0.65 0.18 145)", val: String(markets.filter((m) => m.new).length) },
+          { label: "Avg Liquidity",      color: "oklch(0.75 0.15 60)",  val: markets.length ? formatVolume(totalLiquidity / markets.length) : "$0" },
+          { label: "Featured Markets",   color: "oklch(0.7 0.18 300)",  val: String(markets.filter((m) => m.featured).length) },
         ].map((s) => (
           <div key={s.label} className="rounded-xl border border-border bg-card p-4">
             <div className="flex justify-between items-center mb-2">
@@ -240,7 +616,7 @@ export default function AdminOverview() {
         ))}
       </div>
 
-      {/* Top markets table */}
+      {/* ── Top markets table ── */}
       <div className="rounded-xl border border-border bg-card">
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <p className="text-sm font-semibold text-foreground">Top Markets by Volume</p>
@@ -251,7 +627,7 @@ export default function AdminOverview() {
             <thead>
               <tr className="border-b border-border">
                 {["Market", "Volume", "Liquidity", "Yes %", "Status"].map((h) => (
-                  <th key={h} className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground first:pl-5">{h}</th>
+                  <th key={h} className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -298,6 +674,7 @@ export default function AdminOverview() {
           </table>
         </div>
       </div>
+
     </div>
   );
 }

@@ -4,6 +4,8 @@ import { useState } from "react";
 import { CheckCircle2, Key, Globe, Database, Zap, Shield, Copy, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+const BACKEND = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+
 interface SettingRow { label: string; value: string; masked?: boolean; status: "ok" | "warn" | "error" }
 
 function Section({ title, icon: Icon, children }: { title: string; icon: React.ElementType; children: React.ReactNode }) {
@@ -53,7 +55,7 @@ function SettingRow({ label, value, masked, status }: SettingRow) {
 
 export default function AdminSettings() {
   const [testResult, setTestResult] = useState<Record<string, "idle" | "testing" | "ok" | "error">>({
-    gamma: "idle", clob: "idle", fred: "idle",
+    markets: "idle", prices: "idle", clob: "idle", leaderboard: "idle", fred: "idle",
   });
 
   const testEndpoint = async (key: string, url: string) => {
@@ -67,9 +69,11 @@ export default function AdminSettings() {
   };
 
   const ENDPOINTS = [
-    { key: "gamma", label: "Gamma API (Polymarket)", url: "/api/markets?limit=1" },
-    { key: "clob", label: "CLOB API (Polymarket)", url: "/api/prices?market=0xd8fc55155395d7c2083725edaebbd0e49d13fad1500ce7c007617cc00869573d&interval=1w" },
-    { key: "fred", label: "FRED API (St. Louis Fed)", url: "/api/fred/bulk?ids=FEDFUNDS" },
+    { key: "markets",     label: "Markets API",     url: `${BACKEND}/api/polymarket/markets?limit=1&active=true` },
+    { key: "prices",      label: "Prices API",      url: `${BACKEND}/api/polymarket/prices?market=0xd8fc55155395d7c2083725edaebbd0e49d13fad1500ce7c007617cc00869573d&interval=1w` },
+    { key: "clob",        label: "Order Book API",  url: `${BACKEND}/api/polymarket/clob?endpoint=book&token_id=113287701564209339913693347405685749986285999146352375265161592243948562084773` },
+    { key: "leaderboard", label: "Leaderboard API", url: `${BACKEND}/api/polymarket/leaderboard?limit=5` },
+    { key: "fred",        label: "FRED API",        url: `/api/fred/bulk?ids=FEDFUNDS` },
   ];
 
   return (
@@ -81,20 +85,19 @@ export default function AdminSettings() {
 
       {/* API Keys */}
       <Section title="API Credentials" icon={Key}>
-        <SettingRow label="FRED API Key" value="603575b810dbcd791f0437869b32b399" masked status="ok" />
-        <SettingRow label="Polymarket Gamma API" value="https://gamma-api.polymarket.com" status="ok" />
-        <SettingRow label="Polymarket CLOB API" value="https://clob.polymarket.com" status="ok" />
-        <SettingRow label="Polymarket Data API" value="https://data-api.polymarket.com" status="ok" />
+        <SettingRow label="FRED API Key"       value="603575b810dbcd791f0437869b32b399" masked status="ok" />
+        <SettingRow label="Backend API URL"    value={BACKEND} status="ok" />
       </Section>
 
-      {/* Proxy routes */}
-      <Section title="Proxy API Routes" icon={Globe}>
-        <SettingRow label="Markets proxy" value="/api/markets" status="ok" />
-        <SettingRow label="Prices proxy" value="/api/prices" status="ok" />
-        <SettingRow label="CLOB proxy" value="/api/clob" status="ok" />
-        <SettingRow label="Leaderboard proxy" value="/api/leaderboard" status="ok" />
-        <SettingRow label="FRED series proxy" value="/api/fred/series" status="ok" />
-        <SettingRow label="FRED bulk proxy" value="/api/fred/bulk" status="ok" />
+      {/* Backend routes */}
+      <Section title="Backend API Routes" icon={Globe}>
+        <SettingRow label="Markets"     value={`${BACKEND}/api/polymarket/markets`}     status="ok" />
+        <SettingRow label="Market by ID" value={`${BACKEND}/api/polymarket/markets/:id`} status="ok" />
+        <SettingRow label="Price history" value={`${BACKEND}/api/polymarket/prices`}    status="ok" />
+        <SettingRow label="Order book"  value={`${BACKEND}/api/polymarket/clob`}        status="ok" />
+        <SettingRow label="Events"      value={`${BACKEND}/api/polymarket/events`}      status="ok" />
+        <SettingRow label="Leaderboard" value={`${BACKEND}/api/polymarket/leaderboard`} status="ok" />
+        <SettingRow label="FRED bulk"   value="/api/fred/bulk"                          status="ok" />
       </Section>
 
       {/* Endpoint health tests */}
@@ -105,8 +108,8 @@ export default function AdminSettings() {
               <div className="flex items-center gap-3">
                 <div className={cn(
                   "h-2 w-2 rounded-full shrink-0",
-                  testResult[ep.key] === "ok" ? "bg-yes" :
-                  testResult[ep.key] === "error" ? "bg-no" :
+                  testResult[ep.key] === "ok"      ? "bg-yes" :
+                  testResult[ep.key] === "error"   ? "bg-no" :
                   testResult[ep.key] === "testing" ? "bg-chart-4 animate-pulse" :
                   "bg-muted-foreground/40"
                 )} />
@@ -114,14 +117,14 @@ export default function AdminSettings() {
               </div>
               <div className="flex items-center gap-2">
                 <span className={cn("text-[10px] font-semibold",
-                  testResult[ep.key] === "ok" ? "text-yes" :
-                  testResult[ep.key] === "error" ? "text-no" :
+                  testResult[ep.key] === "ok"      ? "text-yes" :
+                  testResult[ep.key] === "error"   ? "text-no" :
                   testResult[ep.key] === "testing" ? "text-chart-4" :
                   "text-muted-foreground"
                 )}>
-                  {testResult[ep.key] === "idle" ? "Not tested" :
+                  {testResult[ep.key] === "idle"    ? "Not tested" :
                    testResult[ep.key] === "testing" ? "Testing..." :
-                   testResult[ep.key] === "ok" ? "Healthy" : "Failed"}
+                   testResult[ep.key] === "ok"      ? "Healthy" : "Failed"}
                 </span>
                 <button
                   onClick={() => testEndpoint(ep.key, ep.url)}
@@ -140,10 +143,10 @@ export default function AdminSettings() {
       {/* Data sources */}
       <Section title="Data Sources" icon={Database}>
         {[
-          { label: "Polymarket Gamma API", desc: "Markets, events, tags, search", status: "ok" as const },
-          { label: "Polymarket CLOB API", desc: "Price history, order book (public endpoints)", status: "ok" as const },
-          { label: "Polymarket Data API", desc: "Leaderboard, trades (public endpoints)", status: "ok" as const },
-          { label: "FRED API", desc: "12 economic indicators — Fed Funds, CPI, GDP, etc.", status: "ok" as const },
+          { label: "Polymarket Markets",   desc: "Markets, events, search — via backend proxy", status: "ok" as const },
+          { label: "Polymarket CLOB",      desc: "Price history, order book — via backend proxy", status: "ok" as const },
+          { label: "Polymarket Leaderboard", desc: "Top traders — via backend proxy", status: "ok" as const },
+          { label: "FRED API",             desc: "12 economic indicators — Fed Funds, CPI, GDP, etc.", status: "ok" as const },
         ].map((s) => (
           <div key={s.label} className="flex items-center justify-between px-5 py-3.5 hover:bg-secondary/10 transition-colors">
             <div className="flex items-center gap-3">
