@@ -12,7 +12,7 @@ import {
 import { clientFetchMarkets, formatVolume, type PolyMarket } from "@/lib/polymarket";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
-import { useAdminWallet } from "@/hooks/use-admin-wallet";
+import { useWalletContext } from "@/contexts/wallet-context";
 
 const BACKEND = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -398,7 +398,7 @@ function AdminTransactionsSection({
 
 export default function AdminOverview() {
   const { token } = useAuth();
-  const { info: tradingWallet } = useAdminWallet();
+  const { isConnected, address: walletAddress, chainId } = useWalletContext();
 
   const [markets, setMarkets]         = useState<PolyMarket[]>([]);
   const [loading, setLoading]         = useState(true);
@@ -511,44 +511,47 @@ export default function AdminOverview() {
         </div>
       </div>
 
-      {/* ── Trading wallet card ── */}
-      {tradingWallet && (
-        <div className={cn(
-          "rounded-xl border p-5 flex items-center gap-4",
-          tradingWallet.configured
-            ? "border-yes/20 bg-yes/5"
-            : "border-destructive/20 bg-destructive/5"
-        )}>
-          <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl shrink-0",
-            tradingWallet.configured ? "bg-yes/15" : "bg-destructive/15")}>
-            {tradingWallet.configured
-              ? <CheckCircle2 className="h-5 w-5 text-yes" />
-              : <AlertCircle  className="h-5 w-5 text-destructive" />
-            }
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-foreground">
-              Trading Wallet {tradingWallet.configured ? "Configured" : "Not Configured"}
-            </p>
-            {tradingWallet.configured ? (
-              <p className="text-xs font-mono text-muted-foreground mt-0.5 truncate">
-                {tradingWallet.address}
-                {tradingWallet.apiKeyConfigured && (
-                  <span className="ml-2 text-yes font-sans">· API Key: {tradingWallet.apiKey}</span>
-                )}
-              </p>
-            ) : (
-              <p className="text-xs text-destructive mt-0.5">
-                Set POLY_PRIVATE_KEY in .env to enable order execution
-              </p>
-            )}
-          </div>
-          <span className={cn("text-[10px] font-semibold rounded-full px-2.5 py-1",
-            tradingWallet.configured ? "bg-yes/15 text-yes" : "bg-destructive/15 text-destructive")}>
-            {tradingWallet.configured ? "All orders routed here" : "Orders blocked"}
-          </span>
+      {/* ── Wallet status card ── */}
+      <div className={cn(
+        "rounded-xl border p-5 flex items-center gap-4",
+        isConnected
+          ? "border-yes/20 bg-yes/5"
+          : "border-destructive/20 bg-destructive/5"
+      )}>
+        <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl shrink-0",
+          isConnected ? "bg-yes/15" : "bg-destructive/15")}>
+          {isConnected
+            ? <CheckCircle2 className="h-5 w-5 text-yes" />
+            : <AlertCircle  className="h-5 w-5 text-destructive" />
+          }
         </div>
-      )}
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-foreground">
+            Wallet {isConnected ? "Connected" : "Not Connected"}
+          </p>
+          {isConnected && walletAddress ? (
+            <p className="text-xs font-mono text-muted-foreground mt-0.5 truncate">
+              {walletAddress}
+            </p>
+          ) : (
+            <p className="text-xs text-destructive mt-0.5">
+              Connect your wallet to enable order execution
+            </p>
+          )}
+        </div>
+        {isConnected ? (
+          <span className="text-[10px] font-semibold rounded-full px-2.5 py-1 bg-yes/15 text-yes">
+            Orders active
+          </span>
+        ) : (
+          <a
+            href="/admin/wallet"
+            className="text-[10px] font-semibold rounded-full px-2.5 py-1 bg-destructive/15 text-destructive hover:bg-destructive/25 transition-colors"
+          >
+            Connect wallet
+          </a>
+        )}
+      </div>
 
       {/* ── Stat cards ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

@@ -5,13 +5,13 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, TrendingUp, BarChart2, Settings,
-  ChevronRight, Shield, Bell, CircleDot, Users,
+  ChevronRight, Bell, CircleDot, Users,
   LogOut, ChevronDown, ShoppingBag, ArrowUpDown,
   Receipt, ArrowUpCircle, Wallet, CheckCircle2, AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
-import { useAdminWallet } from "@/hooks/use-admin-wallet";
+import { useWalletContext } from "@/contexts/wallet-context";
 import { AdminWalletConnect } from "@/components/admin-wallet-connect";
 
 const NAV_ITEMS = [
@@ -23,6 +23,7 @@ const NAV_ITEMS = [
   { label: "Trades",        href: "/admin/trades",         icon: BarChart2       },
   { label: "Orders",        href: "/admin/orders",         icon: ShoppingBag     },
   { label: "Transactions",  href: "/admin/transactions",   icon: ArrowUpDown     },
+  { label: "Wallet",        href: "/admin/wallet",         icon: Wallet          },
   { label: "Settings",      href: "/admin/settings",       icon: Settings        },
 ];
 
@@ -30,7 +31,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname();
   const router   = useRouter();
   const { user, loading, logout } = useAuth();
-  const { info: tradingWallet } = useAdminWallet();
+  const { isConnected, address: walletAddress, chainId } = useWalletContext();
 
   const [collapsed, setCollapsed]       = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -117,34 +118,35 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           })}
         </nav>
 
-        {/* Trading wallet status pill */}
-        {tradingWallet && (
-          <div className={cn("px-2 pb-1", collapsed && "flex justify-center")}>
-            <div className={cn(
-              "flex items-center gap-2 rounded-md border px-2.5 py-2",
-              tradingWallet.configured
-                ? "border-yes/20 bg-yes/10"
-                : "border-destructive/20 bg-destructive/10",
+        {/* Browser wallet status pill */}
+        <div className={cn("px-2 pb-1", collapsed && "flex justify-center")}>
+          <Link
+            href="/admin/wallet"
+            className={cn(
+              "flex items-center gap-2 rounded-md border px-2.5 py-2 transition-colors",
+              isConnected
+                ? "border-yes/20 bg-yes/10 hover:bg-yes/15"
+                : "border-destructive/20 bg-destructive/10 hover:bg-destructive/15",
               collapsed && "justify-center"
-            )}>
-              {tradingWallet.configured
-                ? <CheckCircle2 className="h-3.5 w-3.5 text-yes shrink-0" />
-                : <AlertCircle  className="h-3.5 w-3.5 text-destructive shrink-0" />
-              }
-              {!collapsed && (
-                <div className="flex-1 min-w-0">
-                  <p className="text-[10px] text-muted-foreground leading-tight">Trading Wallet</p>
-                  <p className={cn("text-[10px] font-mono leading-tight truncate",
-                    tradingWallet.configured ? "text-yes" : "text-destructive")}>
-                    {tradingWallet.configured
-                      ? `${tradingWallet.address?.slice(0, 6)}…${tradingWallet.address?.slice(-4)}`
-                      : "Not configured"}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+            )}
+          >
+            {isConnected
+              ? <CheckCircle2 className="h-3.5 w-3.5 text-yes shrink-0" />
+              : <AlertCircle  className="h-3.5 w-3.5 text-destructive shrink-0" />
+            }
+            {!collapsed && (
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] text-muted-foreground leading-tight">Wallet</p>
+                <p className={cn("text-[10px] font-mono leading-tight truncate",
+                  isConnected ? "text-yes" : "text-destructive")}>
+                  {isConnected && walletAddress
+                    ? `${walletAddress.slice(0, 6)}…${walletAddress.slice(-4)}`
+                    : "Disconnected"}
+                </p>
+              </div>
+            )}
+          </Link>
+        </div>
 
         {/* User footer */}
         <div className="p-2 border-t border-border">
