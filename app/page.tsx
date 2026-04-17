@@ -155,10 +155,17 @@ function MarketsFeedPage() {
   // Reset page when category changes
   const handleCategoryChange = useCallback((cat: string) => {
     setPage(0);
+    setSearchQuery("");
     setActiveCategory(cat);
   }, []);
 
-  // Refetch from backend whenever category or page changes
+  // Handle search from header
+  const handleSearch = useCallback((q: string) => {
+    setSearchQuery(q);
+    setPage(0);
+  }, []);
+
+  // Refetch from backend whenever category, page, or search changes
   useEffect(() => {
     setLoading(true);
     setMarkets([]);
@@ -170,6 +177,7 @@ function MarketsFeedPage() {
       ascending: false,
     };
     if (activeCategory) params.category = activeCategory;
+    if (searchQuery) params.search = searchQuery;
 
     clientFetchMarkets(params)
       .then((data) => {
@@ -178,7 +186,7 @@ function MarketsFeedPage() {
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [activeCategory, page]);
+  }, [activeCategory, page, searchQuery]);
 
   // Leaderboard fetched once
   useEffect(() => {
@@ -187,18 +195,14 @@ function MarketsFeedPage() {
     clientFetchLeaderboard().then(setLeaderboard).catch(() => {});
   }, []);
 
-  const filteredMarkets = searchQuery
-    ? markets.filter((m) => m.question?.toLowerCase().includes(searchQuery.toLowerCase()))
-    : markets;
-
-  const featured = filteredMarkets[0] ?? markets[0];
+  const featured = markets[0];
 
   return (
     <div className="min-h-screen bg-background">
       <Header
         activeCategory={activeCategory}
         onCategoryChange={handleCategoryChange}
-        onSearch={setSearchQuery}
+        onSearch={handleSearch}
       />
       <div className="mx-auto max-w-[1600px] px-4 py-4">
         <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr_220px] xl:grid-cols-[240px_1fr_240px] gap-4">
@@ -218,7 +222,7 @@ function MarketsFeedPage() {
               />
             )}
             <MarketsFeed
-              markets={filteredMarkets}
+              markets={markets}
               loading={loading}
               title={activeCategory ? `${activeCategory.charAt(0).toUpperCase() + activeCategory.slice(1)} Markets` : "All Markets"}
               page={page}

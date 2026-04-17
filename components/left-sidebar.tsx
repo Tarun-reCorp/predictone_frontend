@@ -1,162 +1,152 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Newspaper, MessageCircle, Star, ChevronRight, Dot } from "lucide-react";
-import { type PolyMarket, parseOutcomePrices } from "@/lib/polymarket";
+import { TrendingUp, Activity, Star, Dot, Loader2, BarChart3 } from "lucide-react";
+import {
+  type PolyMarket,
+  parseOutcomePrices,
+  formatVolume,
+  clientFetchMarkets,
+} from "@/lib/polymarket";
 import { cn } from "@/lib/utils";
 
-// Breaking News panel
-const MOCK_NEWS = [
-  {
-    id: "1",
-    headline: "Federal Reserve signals potential rate cuts in Q3 amid cooling inflation data",
-    time: "5m ago",
-    urgent: true,
-  },
-  {
-    id: "2",
-    headline: "Middle East tensions escalate as diplomatic talks stall in Geneva",
-    time: "12m ago",
-    urgent: true,
-  },
-  {
-    id: "3",
-    headline: "Tech giants face new EU antitrust regulations targeting AI platforms",
-    time: "28m ago",
-    urgent: false,
-  },
-  {
-    id: "4",
-    headline: "Presidential polling shows unprecedented volatility in swing states",
-    time: "1h ago",
-    urgent: false,
-  },
-];
-
+// Trending Markets — real data from Polymarket (top by volume)
 export function BreakingNews() {
+  const [markets, setMarkets] = useState<PolyMarket[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    clientFetchMarkets({ limit: 6, active: true, order: "volume", ascending: false })
+      .then((data) => setMarkets(data.slice(0, 6)))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
   return (
     <div className="rounded-xl border border-border bg-card overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border/50">
         <div className="flex items-center gap-2">
-          <Newspaper className="h-3.5 w-3.5 text-no" />
-          <h3 className="text-sm font-semibold text-foreground">Breaking News</h3>
-        </div>
-        <div className="flex gap-2">
-          <button className="text-muted-foreground hover:text-foreground transition-colors">
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <circle cx="11" cy="11" r="8" strokeWidth={2} />
-              <path d="m21 21-4.35-4.35" strokeWidth={2} />
-            </svg>
-          </button>
-          <button className="text-muted-foreground hover:text-foreground transition-colors">
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <circle cx="12" cy="12" r="1" fill="currentColor" />
-              <circle cx="19" cy="12" r="1" fill="currentColor" />
-              <circle cx="5" cy="12" r="1" fill="currentColor" />
-            </svg>
-          </button>
+          <TrendingUp className="h-3.5 w-3.5 text-brand" />
+          <h3 className="text-sm font-semibold text-foreground">Trending Markets</h3>
         </div>
       </div>
-      <div className="divide-y divide-border/30">
-        {MOCK_NEWS.map((item) => (
-          <div
-            key={item.id}
-            className="flex items-start gap-2.5 px-4 py-3 hover:bg-secondary/30 transition-colors cursor-pointer"
-          >
-            <Dot
-              className={cn(
-                "mt-0.5 h-5 w-5 shrink-0",
-                item.urgent ? "text-no" : "text-muted-foreground/40"
-              )}
-            />
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-foreground leading-relaxed line-clamp-2">{item.headline}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">{item.time}</p>
-            </div>
-          </div>
-        ))}
-      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-8">
+          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+        </div>
+      ) : markets.length === 0 ? (
+        <div className="px-4 py-6 text-center">
+          <p className="text-xs text-muted-foreground">No markets available</p>
+        </div>
+      ) : (
+        <div className="divide-y divide-border/30">
+          {markets.map((m) => {
+            const prices = parseOutcomePrices(m.outcomePrices);
+            const yesPct = Math.round((prices[0] ?? 0.5) * 100);
+            const isHot = (m.volumeNum ?? m.volume ?? 0) > 100000;
+            return (
+              <Link
+                key={m.conditionId}
+                href={`/market/${m.conditionId}`}
+                className="flex items-start gap-2.5 px-4 py-3 hover:bg-secondary/30 transition-colors"
+              >
+                <Dot
+                  className={cn(
+                    "mt-0.5 h-5 w-5 shrink-0",
+                    isHot ? "text-no" : "text-muted-foreground/40"
+                  )}
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-foreground leading-relaxed line-clamp-2">
+                    {m.question}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[10px] font-mono font-bold text-yes">
+                      Yes {yesPct}%
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {formatVolume(m.volumeNum ?? m.volume)} vol
+                    </span>
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
-// Community Comments
-const MOCK_COMMENTS = [
-  {
-    id: "1",
-    user: "donanwkaron",
-    badge: "Bullish",
-    text: "regulation in tom one ecrene",
-    change: "+53%",
-    positive: true,
-    tags: ["Bullish", "Bearish", "Neutral"],
-  },
-  {
-    id: "2",
-    user: "barselha",
-    badge: "Gold",
-    text: "is commend",
-    change: "-64%",
-    positive: false,
-    tags: ["Bearish", "Bearish"],
-  },
-  {
-    id: "3",
-    user: "Koe tasthol",
-    badge: null,
-    text: "A commened",
-    change: "-45%",
-    positive: false,
-    tags: ["Bullish", "Bearish"],
-  },
-];
-
+// Recently Active Markets — sorted by newest
 export function CommunityComments() {
+  const [markets, setMarkets] = useState<PolyMarket[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    clientFetchMarkets({ limit: 5, active: true, order: "startDate", ascending: false })
+      .then((data) => setMarkets(data.slice(0, 5)))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
   return (
     <div className="rounded-xl border border-border bg-card overflow-hidden">
       <div className="flex items-center gap-2 px-4 py-3 border-b border-border/50">
-        <MessageCircle className="h-3.5 w-3.5 text-brand" />
-        <h3 className="text-sm font-semibold text-foreground">Top Community Comments</h3>
+        <Activity className="h-3.5 w-3.5 text-brand" />
+        <h3 className="text-sm font-semibold text-foreground">New Markets</h3>
       </div>
-      <div className="divide-y divide-border/30">
-        {MOCK_COMMENTS.map((comment) => (
-          <div key={comment.id} className="px-4 py-3 space-y-1.5 hover:bg-secondary/30 transition-colors cursor-pointer">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="h-6 w-6 rounded-full bg-secondary flex items-center justify-center text-xs font-bold text-foreground">
-                  {comment.user.charAt(0).toUpperCase()}
+
+      {loading ? (
+        <div className="flex justify-center py-8">
+          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+        </div>
+      ) : markets.length === 0 ? (
+        <div className="px-4 py-6 text-center">
+          <p className="text-xs text-muted-foreground">No new markets</p>
+        </div>
+      ) : (
+        <div className="divide-y divide-border/30">
+          {markets.map((m) => {
+            const prices = parseOutcomePrices(m.outcomePrices);
+            const yesPct = Math.round((prices[0] ?? 0.5) * 100);
+            const noPct = 100 - yesPct;
+            const liq = m.liquidityNum ?? m.liquidity ?? 0;
+            return (
+              <Link
+                key={m.conditionId}
+                href={`/market/${m.conditionId}`}
+                className="px-4 py-3 block hover:bg-secondary/30 transition-colors"
+              >
+                <p className="text-xs text-foreground leading-relaxed line-clamp-2">
+                  {m.question}
+                </p>
+                <div className="flex items-center gap-2 mt-1.5">
+                  {/* Mini bar */}
+                  <div className="flex-1 h-1.5 rounded-full bg-secondary overflow-hidden flex">
+                    <div className="h-full bg-yes rounded-l-full" style={{ width: `${yesPct}%` }} />
+                    <div className="h-full bg-no rounded-r-full" style={{ width: `${noPct}%` }} />
+                  </div>
+                  <span className="text-[10px] font-mono font-bold text-yes shrink-0">{yesPct}%</span>
                 </div>
-                <span className="text-xs font-semibold text-foreground">{comment.user}</span>
-                {comment.badge && (
-                  <span className="rounded bg-brand/10 border border-brand/20 px-1.5 py-0.5 text-xs text-brand">{comment.badge}</span>
-                )}
-              </div>
-              <span className={cn("text-xs font-bold font-mono", comment.positive ? "text-yes" : "text-no")}>
-                {comment.change}
-              </span>
-            </div>
-            <p className="text-xs text-muted-foreground pl-8">{comment.text}</p>
-            <div className="flex gap-1.5 pl-8">
-              {comment.tags.map((tag, i) => (
-                <span
-                  key={i}
-                  className={cn(
-                    "rounded-full border px-2 py-0.5 text-xs font-medium",
-                    tag === "Bullish"
-                      ? "bg-yes/10 border-yes/20 text-yes"
-                      : tag === "Bearish"
-                      ? "bg-no/10 border-no/20 text-no"
-                      : "bg-secondary border-border text-muted-foreground"
+                <div className="flex items-center gap-3 mt-1">
+                  <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                    <BarChart3 className="h-2.5 w-2.5" />
+                    {formatVolume(liq)} liq
+                  </span>
+                  {m.new && (
+                    <span className="rounded-full bg-brand/15 border border-brand/20 px-1.5 py-0.5 text-[10px] font-semibold text-brand">
+                      New
+                    </span>
                   )}
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

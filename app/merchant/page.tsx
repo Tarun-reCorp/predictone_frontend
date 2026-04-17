@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import {
-  Store, User, Mail, Shield, CircleDot, TrendingUp, Clock,
+  Store, TrendingUp,
   Receipt, ArrowUpCircle, ShoppingBag, Wallet, Loader2,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
@@ -35,10 +35,6 @@ export default function MerchantDashboardPage() {
 
   if (!user) return null;
 
-  const joinedDate = new Date(user.createdAt).toLocaleDateString("en-US", {
-    year: "numeric", month: "long", day: "numeric",
-  });
-
   return (
     <div className="flex flex-col gap-6 max-w-4xl">
 
@@ -57,26 +53,7 @@ export default function MerchantDashboardPage() {
         </div>
       </div>
 
-      {/* ── Profile stats ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {[
-          { label: "Account Status", value: user.status, icon: CircleDot, highlight: user.status === "active" },
-          { label: "Role",           value: user.role,   icon: Shield,    highlight: false },
-          { label: "Member Since",   value: joinedDate,  icon: Clock,     highlight: false },
-        ].map(s => (
-          <div key={s.label} className="rounded-xl border border-border bg-card p-4 flex items-center gap-3">
-            <div className={cn("flex h-9 w-9 items-center justify-center rounded-lg shrink-0", s.highlight ? "bg-yes/15" : "bg-secondary")}>
-              <s.icon className={cn("h-4 w-4", s.highlight ? "text-yes" : "text-muted-foreground")} />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">{s.label}</p>
-              <p className={cn("text-sm font-semibold capitalize mt-0.5", s.highlight ? "text-yes" : "text-foreground")}>{s.value}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* ── Wallet & activity summary ── */}
+      {/* ── Summary cards ── */}
       {loading ? (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {[1,2,3,4].map(i => <div key={i} className="h-28 rounded-xl bg-secondary animate-pulse" />)}
@@ -89,7 +66,7 @@ export default function MerchantDashboardPage() {
               <Wallet className="h-3.5 w-3.5 text-yes" /> Balance
             </div>
             <p className="text-2xl font-bold font-mono text-yes">${dash.walletBalance.toFixed(2)}</p>
-            <p className="text-xs text-brand group-hover:underline">View wallet →</p>
+            <p className="text-xs text-brand group-hover:underline">View wallet</p>
           </Link>
 
           <Link href="/merchant/fund-requests"
@@ -120,7 +97,20 @@ export default function MerchantDashboardPage() {
         </div>
       ) : null}
 
-      {/* ── Balance info box ── */}
+      {/* ── Trade volume card ── */}
+      {dash && dash.volume > 0 && (
+        <div className="rounded-xl border border-border bg-card p-5 flex items-center gap-4">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand/15 shrink-0">
+            <TrendingUp className="h-5 w-5 text-brand" />
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Total Trade Volume</p>
+            <p className="text-xl font-bold font-mono text-foreground mt-0.5">${dash.volume.toFixed(2)}</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Info box ── */}
       <div className="rounded-xl border border-brand/20 bg-brand/5 px-5 py-4 flex items-start gap-3">
         <Wallet className="h-5 w-5 text-brand mt-0.5 shrink-0" />
         <div>
@@ -133,32 +123,6 @@ export default function MerchantDashboardPage() {
         </div>
       </div>
 
-      {/* ── Account details ── */}
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-border">
-          <h2 className="text-sm font-semibold text-foreground">Account Details</h2>
-        </div>
-        <div className="divide-y divide-border">
-          <DetailRow icon={User}       label="Full Name"  value={user.name} />
-          <DetailRow icon={Mail}       label="Email"      value={user.email} />
-          <DetailRow icon={TrendingUp} label="Account ID" value={user._id} mono />
-        </div>
-      </div>
-
-    </div>
-  );
-}
-
-function DetailRow({ icon: Icon, label, value, mono = false }: {
-  icon: React.ElementType; label: string; value: string; mono?: boolean;
-}) {
-  return (
-    <div className="flex items-center gap-3 px-5 py-3.5">
-      <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
-      <span className="text-sm text-muted-foreground w-36 shrink-0">{label}</span>
-      <span className={cn("text-sm flex-1 truncate text-foreground", mono ? "font-mono text-xs" : "")}>
-        {value}
-      </span>
     </div>
   );
 }

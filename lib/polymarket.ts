@@ -205,6 +205,7 @@ export async function clientFetchMarkets(params?: {
   category?: string;
   order?: string;
   ascending?: boolean;
+  search?: string;
 }): Promise<PolyMarket[]> {
   const query = new URLSearchParams();
   if (params?.limit)    query.set("limit",     String(params.limit));
@@ -215,6 +216,7 @@ export async function clientFetchMarkets(params?: {
   if (params?.category) query.set("category",  params.category);
   if (params?.order)    query.set("order",     params.order);
   if (params?.ascending !== undefined) query.set("ascending", String(params.ascending));
+  if (params?.search)   query.set("search",    params.search);
 
   const res = await fetch(`${BACKEND}/api/polymarket/markets?${query}`);
   if (!res.ok) return [];

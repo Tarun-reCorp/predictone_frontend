@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import {
   ArrowUpCircle, Clock, CheckCircle2, XCircle,
   ChevronLeft, ChevronRight, Loader2, Plus, X,
+  Wallet, Copy, Check, ExternalLink,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
@@ -40,6 +41,10 @@ export default function FundRequestsPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal]       = useState(0);
 
+  // Admin wallet
+  const [adminWallet, setAdminWallet] = useState<{ configured: boolean; address: string | null } | null>(null);
+  const [addrCopied, setAddrCopied]   = useState(false);
+
   // Form state
   const [showForm, setShowForm] = useState(false);
   const [amount, setAmount]     = useState("");
@@ -60,6 +65,22 @@ export default function FundRequestsPage() {
   };
 
   useEffect(load, [token, page]);
+
+  // Fetch admin wallet address
+  useEffect(() => {
+    if (!token) return;
+    fetch(`${API}/api/merchant/admin-wallet`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => setAdminWallet(d.data))
+      .catch(() => {});
+  }, [token]);
+
+  const copyWalletAddr = async () => {
+    if (!adminWallet?.address) return;
+    await navigator.clipboard.writeText(adminWallet.address);
+    setAddrCopied(true);
+    setTimeout(() => setAddrCopied(false), 2000);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,6 +120,48 @@ export default function FundRequestsPage() {
           <Plus className="h-4 w-4" /> New Request
         </button>
       </div>
+
+      {/* Admin wallet address card */}
+      {adminWallet?.configured && adminWallet.address && (
+        <div className="rounded-xl border border-brand/20 bg-brand/5 p-5">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand/15 shrink-0">
+              <Wallet className="h-5 w-5 text-brand" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-foreground">Admin Wallet Address</p>
+              <p className="text-xs text-muted-foreground mt-0.5 mb-3">
+                Send USDC to this address on <span className="font-semibold text-purple-400">Polygon</span> network, then submit a fund request with the transaction reference.
+              </p>
+              <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2.5">
+                <code className="text-xs font-mono text-foreground flex-1 truncate">
+                  {adminWallet.address}
+                </code>
+                <button
+                  onClick={copyWalletAddr}
+                  className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-secondary transition-colors shrink-0"
+                  title="Copy address"
+                >
+                  {addrCopied ? (
+                    <Check className="h-3.5 w-3.5 text-yes" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+                  )}
+                </button>
+                <a
+                  href={`https://polygonscan.com/address/${adminWallet.address}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-secondary transition-colors shrink-0"
+                  title="View on Polygonscan"
+                >
+                  <ExternalLink className="h-3.5 w-3.5 text-brand" />
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* New request modal */}
       {showForm && (

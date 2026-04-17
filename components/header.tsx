@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import {
@@ -52,6 +52,15 @@ export function Header({ activeCategory = "", onCategoryChange, onSearch }: Head
 
   const visibleNav = NAV_CATEGORIES.slice(0, 7);
   const moreNav = NAV_CATEGORIES.slice(7);
+
+  // Debounced search — triggers API call after user stops typing
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debouncedSearch = useCallback((q: string) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      onSearch?.(q);
+    }, 400);
+  }, [onSearch]);
 
   useEffect(() => {
     if (searchOpen && searchRef.current) searchRef.current.focus();
@@ -126,7 +135,10 @@ export function Header({ activeCategory = "", onCategoryChange, onSearch }: Head
               ref={searchRef}
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                debouncedSearch(e.target.value.trim());
+              }}
               onFocus={() => setSearchOpen(true)}
               onBlur={() => setSearchOpen(false)}
               placeholder="Search markets, events..."
@@ -135,7 +147,10 @@ export function Header({ activeCategory = "", onCategoryChange, onSearch }: Head
             {searchQuery && (
               <button
                 type="button"
-                onClick={() => setSearchQuery("")}
+                onClick={() => {
+                  setSearchQuery("");
+                  onSearch?.("");
+                }}
                 className="text-muted-foreground hover:text-foreground"
               >
                 <X className="h-3.5 w-3.5" />

@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   TrendingUp, LayoutDashboard, User, ChevronRight,
   CircleDot, Bell, LogOut, ChevronDown,
-  ShoppingBag, ArrowUpDown, Wallet, ArrowUpCircle, Receipt,
+  ShoppingBag, ArrowUpDown, Wallet, ArrowUpCircle, Receipt, HandCoins,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -19,6 +19,7 @@ const NAV_ITEMS = [
   { label: "Transactions",  href: "/merchant/transactions",  icon: ArrowUpDown     },
   { label: "Wallet",        href: "/merchant/wallet",        icon: Wallet          },
   { label: "Fund Requests", href: "/merchant/fund-requests", icon: ArrowUpCircle   },
+  { label: "Topup",         href: "/merchant/topup",         icon: HandCoins       },
   { label: "Profile",       href: "/merchant/profile",       icon: User            },
 ];
 
