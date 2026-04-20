@@ -34,7 +34,7 @@ function OrderRow({
         style={{ width: `${pct}%` }}
       />
       <span className={cn("relative z-10", side === "bid" ? "text-yes" : "text-no")}>
-        {(price * 100).toFixed(1)}¢
+        ${price.toFixed(2)}
       </span>
       <span className="relative z-10 text-muted-foreground">{size.toFixed(0)}</span>
     </div>
@@ -111,11 +111,11 @@ export function OrderBook({ tokenId, yesPct }: OrderBookProps) {
           {/* Spread / midpoint row */}
           <div className="flex items-center justify-between px-3 py-2 bg-secondary/40 border-y border-border/40">
             <span className="text-xs font-semibold text-foreground">Mid</span>
-            <span className="text-xs font-mono font-bold text-brand">{yesPct}¢</span>
+            <span className="text-xs font-mono font-bold text-brand">${(yesPct / 100).toFixed(2)}</span>
             <span className="text-xs text-muted-foreground">
               Spread:{" "}
               {asks[0] && bids[0]
-                ? `${((parseFloat(asks[0].price) - parseFloat(bids[bids.length - 1]?.price ?? "0")) * 100).toFixed(1)}¢`
+                ? `$${(parseFloat(asks[0].price) - parseFloat(bids[bids.length - 1]?.price ?? "0")).toFixed(2)}`
                 : "—"}
             </span>
           </div>

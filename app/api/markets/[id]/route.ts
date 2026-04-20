@@ -8,7 +8,7 @@ export async function GET(
 ) {
   const { id } = await params;
   try {
-    const res = await fetch(`${BACKEND}/api/polymarket/markets/${encodeURIComponent(id)}`, {
+    const res = await fetch(`${BACKEND}/api/markets/${encodeURIComponent(id)}`, {
       headers: { Accept: "application/json" },
       next: { revalidate: 60 },
     });

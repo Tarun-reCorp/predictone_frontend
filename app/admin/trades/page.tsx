@@ -173,10 +173,10 @@ export default function AdminTrades() {
             <ResponsiveContainer width="100%" height={160}>
               <LineChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
                 <XAxis dataKey="t" tick={{ fill: "oklch(0.55 0.01 240)", fontSize: 10 }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-                <YAxis tick={{ fill: "oklch(0.55 0.01 240)", fontSize: 10 }} axisLine={false} tickLine={false} domain={[0, 100]} tickFormatter={(v) => `${v}¢`} />
+                <YAxis tick={{ fill: "oklch(0.55 0.01 240)", fontSize: 10 }} axisLine={false} tickLine={false} domain={[0, 100]} tickFormatter={(v) => `$${(v / 100).toFixed(2)}`} />
                 <Tooltip
                   contentStyle={{ background: "oklch(0.16 0.006 240)", border: "1px solid oklch(0.22 0.008 240)", borderRadius: 8, fontSize: 11 }}
-                  formatter={(v: number) => [`${v}¢`, "Yes Price"]}
+                  formatter={(v: number) => [`$${(v / 100).toFixed(2)}`, "Yes Price"]}
                 />
                 <Line type="monotone" dataKey="price" stroke="oklch(0.65 0.18 145)" strokeWidth={2} dot={false} />
               </LineChart>
@@ -271,7 +271,7 @@ export default function AdminTrades() {
                       {t.side}
                     </span>
                   </td>
-                  <td className="px-5 py-2.5 font-mono text-xs text-foreground">{(t.price * 100).toFixed(1)}¢</td>
+                  <td className="px-5 py-2.5 font-mono text-xs text-foreground">${t.price.toFixed(2)}</td>
                   <td className="px-5 py-2.5 font-mono text-xs text-foreground">{t.size}</td>
                   <td className="px-5 py-2.5 font-mono text-xs font-semibold text-foreground">${t.total.toFixed(2)}</td>
                 </tr>

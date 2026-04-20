@@ -40,20 +40,22 @@ export function MarketPulse({ markets }: MarketPulseProps) {
         {pulseItems.map(({ market, sentiment }) => {
           const prices = parseOutcomePrices(market.outcomePrices);
           const yesPct = Math.round((prices[0] ?? 0.5) * 100);
-          const isUp = yesPct >= 50;
+          const vol = market.volumeNum ?? market.volume ?? 0;
+          const hasVolume = vol > 0;
+          const isUp = hasVolume ? yesPct >= 50 : false;
           return (
-            <div key={market.conditionId} className="flex items-start gap-3 px-4 py-3 hover:bg-secondary/30 transition-colors cursor-pointer">
-              <div className={cn("mt-0.5 h-2 w-2 rounded-full shrink-0", isUp ? "bg-yes" : "bg-no")} />
+            <div key={market.conditionId || market.id} className="flex items-start gap-3 px-4 py-3 hover:bg-secondary/30 transition-colors cursor-pointer">
+              <div className={cn("mt-0.5 h-2 w-2 rounded-full shrink-0", hasVolume ? (isUp ? "bg-yes" : "bg-no") : "bg-muted-foreground/30")} />
               <p className="flex-1 text-xs text-muted-foreground line-clamp-2 leading-relaxed hover:text-foreground transition-colors">
                 {market.question}
               </p>
               <span
                 className={cn(
                   "shrink-0 rounded-full border px-2 py-0.5 text-xs font-medium",
-                  SENTIMENT_COLORS[sentiment]
+                  hasVolume ? SENTIMENT_COLORS[sentiment] : "text-muted-foreground bg-secondary border-border"
                 )}
               >
-                {sentiment}
+                {hasVolume ? sentiment : "New"}
               </span>
             </div>
           );
@@ -176,17 +178,27 @@ export function AIPredictions({ markets }: { markets: PolyMarket[] }) {
         <p className="text-xs text-muted-foreground leading-relaxed">
           AI-generated forecasts based on news, sentiment analysis, and social data signals.
         </p>
-        {items.map(({ market, yesPct }) => (
-          <div key={market.conditionId} className="flex items-center justify-between gap-3">
-            <p className="text-xs text-foreground line-clamp-1 flex-1">{market.question}</p>
-            <div className="flex items-center gap-1.5 shrink-0">
-              <div className="h-1 w-16 rounded-full bg-secondary overflow-hidden">
-                <div className="h-full bg-brand transition-all" style={{ width: `${yesPct}%` }} />
+        {items.map(({ market, yesPct }) => {
+          const vol = market.volumeNum ?? market.volume ?? 0;
+          const hasVolume = vol > 0;
+          return (
+            <div key={market.conditionId || market.id} className="flex items-center justify-between gap-3">
+              <p className="text-xs text-foreground line-clamp-1 flex-1">{market.question}</p>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {hasVolume ? (
+                  <>
+                    <div className="h-1 w-16 rounded-full bg-secondary overflow-hidden">
+                      <div className="h-full bg-brand transition-all" style={{ width: `${yesPct}%` }} />
+                    </div>
+                    <span className="text-xs font-mono font-semibold text-brand">{yesPct}%</span>
+                  </>
+                ) : (
+                  <span className="text-[10px] text-muted-foreground">No data</span>
+                )}
               </div>
-              <span className="text-xs font-mono font-semibold text-brand">{yesPct}%</span>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

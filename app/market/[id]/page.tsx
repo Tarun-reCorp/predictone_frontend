@@ -185,7 +185,7 @@ export default function MarketPage() {
                       <div className="flex-1">
                         <div className="flex items-center justify-between mb-1.5">
                           <span className="text-sm font-medium text-foreground">{outcome}</span>
-                          <span className={`text-sm font-bold font-mono ${isYes ? "text-yes" : "text-no"}`}>{pct}¢</span>
+                          <span className={`text-sm font-bold font-mono ${isYes ? "text-yes" : "text-no"}`}>${price.toFixed(2)}</span>
                         </div>
                         <div className="h-1.5 w-full rounded-full bg-secondary overflow-hidden">
                           <div className={`h-full transition-all ${isYes ? "bg-yes" : "bg-no"}`} style={{ width: `${pct}%` }} />
@@ -200,7 +200,7 @@ export default function MarketPage() {
                             : "bg-no/10  text-no  border border-no/20  hover:bg-no/20  active:bg-no/30"
                         }`}
                       >
-                        Buy {pct}¢
+                        Buy ${price.toFixed(2)}
                       </button>
                     )}
                     </div>
@@ -262,13 +262,12 @@ export default function MarketPage() {
       </main>
 
       {/* ── Buy Modal ── */}
-      {market.conditionId && (
+      {(market.id || market.conditionId) && (
         <BuyModal
           open={buyModalOpen}
           onClose={() => setBuyModalOpen(false)}
           outcome={buyOutcome}
-          price={buyOutcome === "Yes" ? (prices[0] ?? 0.5) : (prices[1] ?? 0.5)}
-          conditionId={market.conditionId}
+          marketId={market.id || market.conditionId}
           marketQuestion={market.question}
           initialAmount={buyAmount}
           onLoginRequired={() => setAuthModal({ open: true, tab: "login" })}

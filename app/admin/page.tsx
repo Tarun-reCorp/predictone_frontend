@@ -229,54 +229,52 @@ function AdminOrdersSection({
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full text-xs">
+              <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-border bg-secondary/20">
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">#</th>
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Merchant</th>
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Market</th>
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Outcome</th>
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Side</th>
-                    <th className="px-4 py-3 text-right font-medium text-muted-foreground">Amount</th>
-                    <th className="px-4 py-3 text-right font-medium text-muted-foreground">Price</th>
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Date</th>
+                  <tr className="border-b border-border bg-secondary/30">
+                    <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">#</th>
+                    <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Merchant</th>
+                    <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Market</th>
+                    <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Outcome</th>
+                    <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Side</th>
+                    <th className="px-5 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Amount</th>
+                    <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Status</th>
+                    <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Date</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border/50">
+                <tbody className="divide-y divide-border/60">
                   {orders.map((order, idx) => {
                     const merchant = typeof order.merchantId === "object" ? order.merchantId : null;
                     return (
-                      <tr key={order._id} className="hover:bg-secondary/10 transition-colors">
-                        <td className="px-4 py-3 text-muted-foreground font-mono">{(page - 1) * 10 + idx + 1}</td>
-                        <td className="px-4 py-3 text-foreground">
+                      <tr key={order._id} className="hover:bg-secondary/20 transition-colors">
+                        <td className="px-5 py-4 text-sm text-muted-foreground font-mono">{(page - 1) * 10 + idx + 1}</td>
+                        <td className="px-5 py-4 text-sm text-foreground">
                           {merchant?.name ?? (typeof order.merchantId === "string" ? order.merchantId.slice(0, 8) + "…" : "—")}
                         </td>
-                        <td className="px-4 py-3 max-w-[180px]">
-                          <p className="truncate text-foreground font-medium">
+                        <td className="px-5 py-4 max-w-[180px]">
+                          <p className="truncate text-sm text-foreground font-medium">
                             {order.marketQuestion || order.conditionId.slice(0, 16) + "…"}
                           </p>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-5 py-4">
                           <span className={cn(
-                            "rounded-full px-2 py-0.5 font-semibold text-[10px]",
+                            "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold",
                             order.outcome === "Yes" ? "bg-yes/15 text-yes" : "bg-no/15 text-no"
                           )}>
                             {order.outcome}
                           </span>
                         </td>
-                        <td className="px-4 py-3 capitalize text-muted-foreground">{order.side}</td>
-                        <td className="px-4 py-3 text-right font-mono text-foreground">{fmtAmount(order.amount)}</td>
-                        <td className="px-4 py-3 text-right font-mono text-foreground">{(order.price * 100).toFixed(1)}¢</td>
-                        <td className="px-4 py-3">
+                        <td className="px-5 py-4 text-sm capitalize text-muted-foreground">{order.side}</td>
+                        <td className="px-5 py-4 text-right text-sm font-semibold font-mono text-foreground">{fmtAmount(order.amount)}</td>
+                        <td className="px-5 py-4">
                           <span className={cn(
-                            "rounded-full px-2 py-0.5 font-semibold text-[10px] capitalize",
+                            "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold capitalize",
                             ORDER_STATUS_STYLE[order.status] ?? "bg-secondary text-muted-foreground"
                           )}>
                             {order.status}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{fmtDate(order.createdAt)}</td>
+                        <td className="px-5 py-4 text-sm text-muted-foreground whitespace-nowrap">{fmtDate(order.createdAt)}</td>
                       </tr>
                     );
                   })}
@@ -338,48 +336,48 @@ function AdminTransactionsSection({
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full text-xs">
+              <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-border bg-secondary/20">
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">#</th>
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Merchant</th>
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Type</th>
-                    <th className="px-4 py-3 text-right font-medium text-muted-foreground">Amount</th>
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Description</th>
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Date</th>
+                  <tr className="border-b border-border bg-secondary/30">
+                    <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">#</th>
+                    <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Merchant</th>
+                    <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Type</th>
+                    <th className="px-5 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Amount</th>
+                    <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Description</th>
+                    <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Status</th>
+                    <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Date</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border/50">
+                <tbody className="divide-y divide-border/60">
                   {txns.map((tx, idx) => {
                     const merchant = typeof tx.merchantId === "object" ? tx.merchantId : null;
                     return (
-                      <tr key={tx._id} className="hover:bg-secondary/10 transition-colors">
-                        <td className="px-4 py-3 text-muted-foreground font-mono">{(page - 1) * 10 + idx + 1}</td>
-                        <td className="px-4 py-3 text-foreground">
+                      <tr key={tx._id} className="hover:bg-secondary/20 transition-colors">
+                        <td className="px-5 py-4 text-sm text-muted-foreground font-mono">{(page - 1) * 10 + idx + 1}</td>
+                        <td className="px-5 py-4 text-sm text-foreground">
                           {merchant?.name ?? (typeof tx.merchantId === "string" ? tx.merchantId.slice(0, 8) + "…" : "—")}
                         </td>
-                        <td className="px-4 py-3">
-                          <span className="capitalize text-foreground font-medium">
+                        <td className="px-5 py-4">
+                          <span className="capitalize text-sm text-foreground font-medium">
                             {tx.type.replace(/_/g, " ")}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-right font-mono text-foreground">
+                        <td className="px-5 py-4 text-right text-sm font-semibold font-mono text-foreground">
                           {fmtAmount(tx.amount)}{" "}
-                          <span className="text-muted-foreground">{tx.currency}</span>
+                          <span className="text-xs text-muted-foreground">{tx.currency}</span>
                         </td>
-                        <td className="px-4 py-3 text-muted-foreground max-w-[200px]">
+                        <td className="px-5 py-4 text-sm text-muted-foreground max-w-[200px]">
                           <p className="truncate">{tx.description || "—"}</p>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-5 py-4">
                           <span className={cn(
-                            "rounded-full px-2 py-0.5 font-semibold text-[10px] capitalize",
+                            "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold capitalize",
                             TX_STATUS_STYLE[tx.status] ?? "bg-secondary text-muted-foreground"
                           )}>
                             {tx.status}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{fmtDate(tx.createdAt)}</td>
+                        <td className="px-5 py-4 text-sm text-muted-foreground whitespace-nowrap">{fmtDate(tx.createdAt)}</td>
                       </tr>
                     );
                   })}
@@ -490,7 +488,7 @@ export default function AdminOverview() {
         <div>
           <h1 className="text-2xl font-bold text-foreground tracking-tight">Overview</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Live data from Polymarket — {markets.length} markets loaded
+            {markets.length} markets loaded from database
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -628,18 +626,18 @@ export default function AdminOverview() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border">
+              <tr className="border-b border-border bg-secondary/30">
                 {["Market", "Volume", "Liquidity", "Yes %", "Status"].map((h) => (
-                  <th key={h} className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
+                  <th key={h} className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
                 ))}
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-border/60">
               {loading
                 ? Array.from({ length: 5 }).map((_, i) => (
-                    <tr key={i} className="border-b border-border/50">
+                    <tr key={i}>
                       {Array.from({ length: 5 }).map((_, j) => (
-                        <td key={j} className="px-5 py-3"><div className="h-4 rounded bg-secondary animate-pulse" /></td>
+                        <td key={j} className="px-5 py-4"><div className="h-4 rounded bg-secondary animate-pulse" /></td>
                       ))}
                     </tr>
                   ))
@@ -647,14 +645,14 @@ export default function AdminOverview() {
                     let yesPct = 50;
                     try { yesPct = Math.round(parseFloat(JSON.parse(m.outcomePrices ?? '["0.5"]')[0]) * 100); } catch {}
                     return (
-                      <tr key={m.id} className="border-b border-border/50 hover:bg-secondary/30 transition-colors">
-                        <td className="px-5 py-3 max-w-xs">
-                          <p className="font-medium text-foreground truncate text-xs">{m.question}</p>
-                          <p className="text-[10px] text-muted-foreground mt-0.5">{m.slug}</p>
+                      <tr key={m.id} className="hover:bg-secondary/20 transition-colors">
+                        <td className="px-5 py-4 max-w-xs">
+                          <p className="font-medium text-foreground truncate text-sm">{m.question}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">{m.slug}</p>
                         </td>
-                        <td className="px-5 py-3 font-mono text-xs text-foreground">{formatVolume(m.volumeNum ?? m.volume)}</td>
-                        <td className="px-5 py-3 font-mono text-xs text-foreground">{formatVolume(m.liquidityNum ?? m.liquidity)}</td>
-                        <td className="px-5 py-3">
+                        <td className="px-5 py-4 font-mono text-sm text-foreground">{formatVolume(m.volumeNum ?? m.volume)}</td>
+                        <td className="px-5 py-4 font-mono text-sm text-foreground">{formatVolume(m.liquidityNum ?? m.liquidity)}</td>
+                        <td className="px-5 py-4">
                           <div className="flex items-center gap-2">
                             <div className="w-16 h-1.5 rounded-full bg-secondary overflow-hidden">
                               <div className="h-full bg-yes rounded-full" style={{ width: `${yesPct}%` }} />
@@ -662,9 +660,9 @@ export default function AdminOverview() {
                             <span className="text-xs font-mono text-yes">{yesPct}%</span>
                           </div>
                         </td>
-                        <td className="px-5 py-3">
+                        <td className="px-5 py-4">
                           <span className={cn(
-                            "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                            "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold",
                             m.active && !m.closed ? "bg-yes/15 text-yes" : "bg-secondary text-muted-foreground"
                           )}>
                             {m.active && !m.closed ? "Active" : "Closed"}

@@ -174,7 +174,7 @@ export default function MerchantOrdersPage() {
                         <span className="text-sm font-semibold font-mono text-foreground">{fmtAmt(o.amount)}</span>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <span className="text-sm font-mono text-muted-foreground">{(o.price * 100).toFixed(1)}¢</span>
+                        <span className="text-sm font-mono text-muted-foreground">${o.price.toFixed(2)}</span>
                       </td>
                       <td className="px-6 py-4">
                         <span className={cn(

@@ -45,11 +45,13 @@ export function BreakingNews() {
           {markets.map((m) => {
             const prices = parseOutcomePrices(m.outcomePrices);
             const yesPct = Math.round((prices[0] ?? 0.5) * 100);
-            const isHot = (m.volumeNum ?? m.volume ?? 0) > 100000;
+            const vol = m.volumeNum ?? m.volume ?? 0;
+            const hasVolume = vol > 0;
+            const isHot = vol > 100000;
             return (
               <Link
-                key={m.conditionId}
-                href={`/market/${m.conditionId}`}
+                key={m.conditionId || m.id}
+                href={`/market/${m.slug || m.conditionId}`}
                 className="flex items-start gap-2.5 px-4 py-3 hover:bg-secondary/30 transition-colors"
               >
                 <Dot
@@ -63,11 +65,17 @@ export function BreakingNews() {
                     {m.question}
                   </p>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className="text-[10px] font-mono font-bold text-yes">
-                      Yes {yesPct}%
-                    </span>
+                    {hasVolume ? (
+                      <span className="text-[10px] font-mono font-bold text-yes">
+                        Yes {yesPct}%
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-muted-foreground">
+                        No trades yet
+                      </span>
+                    )}
                     <span className="text-[10px] text-muted-foreground">
-                      {formatVolume(m.volumeNum ?? m.volume)} vol
+                      {formatVolume(vol)} vol
                     </span>
                   </div>
                 </div>
@@ -113,28 +121,39 @@ export function CommunityComments() {
             const prices = parseOutcomePrices(m.outcomePrices);
             const yesPct = Math.round((prices[0] ?? 0.5) * 100);
             const noPct = 100 - yesPct;
-            const liq = m.liquidityNum ?? m.liquidity ?? 0;
+            const vol = m.volumeNum ?? m.volume ?? 0;
+            const hasVolume = vol > 0;
             return (
               <Link
-                key={m.conditionId}
-                href={`/market/${m.conditionId}`}
+                key={m.conditionId || m.id}
+                href={`/market/${m.slug || m.conditionId}`}
                 className="px-4 py-3 block hover:bg-secondary/30 transition-colors"
               >
                 <p className="text-xs text-foreground leading-relaxed line-clamp-2">
                   {m.question}
                 </p>
                 <div className="flex items-center gap-2 mt-1.5">
-                  {/* Mini bar */}
-                  <div className="flex-1 h-1.5 rounded-full bg-secondary overflow-hidden flex">
-                    <div className="h-full bg-yes rounded-l-full" style={{ width: `${yesPct}%` }} />
-                    <div className="h-full bg-no rounded-r-full" style={{ width: `${noPct}%` }} />
-                  </div>
-                  <span className="text-[10px] font-mono font-bold text-yes shrink-0">{yesPct}%</span>
+                  {hasVolume ? (
+                    <>
+                      <div className="flex-1 h-1.5 rounded-full bg-secondary overflow-hidden flex">
+                        <div className="h-full bg-yes rounded-l-full" style={{ width: `${yesPct}%` }} />
+                        <div className="h-full bg-no rounded-r-full" style={{ width: `${noPct}%` }} />
+                      </div>
+                      <span className="text-[10px] font-mono font-bold text-yes shrink-0">{yesPct}%</span>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex-1 h-1.5 rounded-full bg-secondary overflow-hidden">
+                        <div className="h-full w-1/2 bg-muted-foreground/20" />
+                      </div>
+                      <span className="text-[10px] text-muted-foreground shrink-0">New</span>
+                    </>
+                  )}
                 </div>
                 <div className="flex items-center gap-3 mt-1">
                   <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
                     <BarChart3 className="h-2.5 w-2.5" />
-                    {formatVolume(liq)} liq
+                    {hasVolume ? `${formatVolume(vol)} vol` : "$0 liq"}
                   </span>
                   {m.new && (
                     <span className="rounded-full bg-brand/15 border border-brand/20 px-1.5 py-0.5 text-[10px] font-semibold text-brand">
@@ -173,10 +192,12 @@ export function Watchlist({ markets }: WatchlistProps) {
           {pinned.map((m) => {
             const prices = parseOutcomePrices(m.outcomePrices);
             const yesPct = Math.round((prices[0] ?? 0.5) * 100);
+            const vol = m.volumeNum ?? m.volume ?? 0;
+            const hasVolume = vol > 0;
             return (
               <Link
-                key={m.conditionId}
-                href={`/market/${m.conditionId}`}
+                key={m.conditionId || m.id}
+                href={`/market/${m.slug || m.conditionId}`}
                 className="flex flex-col gap-1.5 rounded-lg border border-border bg-secondary/50 p-2.5 hover:border-primary/30 transition-colors"
               >
                 <p className="text-xs text-muted-foreground line-clamp-1">Mini Charts</p>
@@ -185,12 +206,16 @@ export function Watchlist({ markets }: WatchlistProps) {
                     <div
                       key={i}
                       className="flex-1 rounded-sm bg-brand/60"
-                      style={{ height: `${20 + Math.sin(i) * 15 + yesPct * 0.2}%` }}
+                      style={{ height: `${20 + Math.sin(i) * 15 + (hasVolume ? yesPct : 50) * 0.2}%` }}
                     />
                   ))}
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-mono font-bold text-yes">{yesPct}%</span>
+                  {hasVolume ? (
+                    <span className="text-xs font-mono font-bold text-yes">{yesPct}%</span>
+                  ) : (
+                    <span className="text-[10px] text-muted-foreground">No trades</span>
+                  )}
                   <button className="text-xs text-muted-foreground hover:text-foreground transition-colors">
                     Quick-trade
                   </button>

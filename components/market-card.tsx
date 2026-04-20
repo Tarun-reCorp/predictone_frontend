@@ -21,7 +21,8 @@ export function MarketCard({ market }: MarketCardProps) {
   const yesPct = Math.round(yesPrice * 100);
   const noPct = Math.round(noPrice * 100);
 
-  const isYesLeading = yesPrice >= noPrice;
+  const vol = market.volumeNum ?? market.volume ?? 0;
+  const hasVolume = vol > 0;
 
   return (
     <Link
@@ -49,25 +50,36 @@ export function MarketCard({ market }: MarketCardProps) {
         </p>
       </div>
 
-      {/* Yes/No probability bar */}
-      <div className="space-y-1.5">
-        <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-          <div
-            className="h-full bg-yes transition-all duration-500"
-            style={{ width: `${yesPct}%` }}
-          />
-        </div>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs font-bold text-yes">{yesPct}%</span>
-            <span className="text-xs text-muted-foreground">Yes</span>
+      {/* Yes/No probability bar — or neutral state when no trades */}
+      {hasVolume ? (
+        <div className="space-y-1.5">
+          <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+            <div
+              className="h-full bg-yes transition-all duration-500"
+              style={{ width: `${yesPct}%` }}
+            />
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-muted-foreground">No</span>
-            <span className="text-xs font-bold text-no">{noPct}%</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-bold text-yes">{yesPct}%</span>
+              <span className="text-xs text-muted-foreground">Yes</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">No</span>
+              <span className="text-xs font-bold text-no">{noPct}%</span>
+            </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="space-y-1.5">
+          <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+            <div className="h-full w-1/2 bg-muted-foreground/20" />
+          </div>
+          <p className="text-center text-xs text-muted-foreground">
+            No trades yet &mdash; be the first to trade
+          </p>
+        </div>
+      )}
 
       {/* Buy buttons */}
       <div className="flex gap-2">
@@ -78,7 +90,7 @@ export function MarketCard({ market }: MarketCardProps) {
             "bg-yes/10 text-yes hover:bg-yes/20 border border-yes/20"
           )}
         >
-          Buy Yes {yesPct}¢
+          {hasVolume ? `Buy Yes $${(yesPct / 100).toFixed(2)}` : "Buy Yes"}
         </button>
         <button
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`${marketPath}?buy=no`); }}
@@ -87,7 +99,7 @@ export function MarketCard({ market }: MarketCardProps) {
             "bg-no/10 text-no hover:bg-no/20 border border-no/20"
           )}
         >
-          Buy No {noPct}¢
+          {hasVolume ? `Buy No $${(noPct / 100).toFixed(2)}` : "Buy No"}
         </button>
       </div>
 
@@ -95,15 +107,19 @@ export function MarketCard({ market }: MarketCardProps) {
       <div className="flex items-center justify-between border-t border-border/50 pt-2.5">
         <div className="flex items-center gap-1 text-xs text-muted-foreground">
           <BarChart2 className="h-3 w-3" />
-          <span>{formatVolume(market.volumeNum ?? market.volume)}</span>
+          <span>{formatVolume(vol)}</span>
           <span className="text-border">·</span>
           <span>Vol</span>
         </div>
-        {market.tags && market.tags.length > 0 && (
+        {market.category && market.category !== "Other" ? (
+          <span className="rounded-full bg-secondary px-2 py-0.5 text-xs text-muted-foreground">
+            {market.category}
+          </span>
+        ) : market.tags && market.tags.length > 0 ? (
           <span className="rounded-full bg-secondary px-2 py-0.5 text-xs text-muted-foreground">
             {market.tags[0].label}
           </span>
-        )}
+        ) : null}
       </div>
     </Link>
   );

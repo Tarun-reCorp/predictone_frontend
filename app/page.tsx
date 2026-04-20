@@ -7,8 +7,8 @@ import { useAuth } from "@/contexts/auth-context";
 import { Header } from "@/components/header";
 import { FeaturedMarket } from "@/components/featured-market";
 import { MarketsFeed } from "@/components/markets-feed";
-import { BreakingNews, CommunityComments, Watchlist } from "@/components/left-sidebar";
-import { MarketPulse, TraderLeaderboard, AIPredictions, HotTopics } from "@/components/right-sidebar";
+import { BreakingNews, CommunityComments } from "@/components/left-sidebar";
+import { MarketPulse, TraderLeaderboard } from "@/components/right-sidebar";
 import { EconPanel } from "@/components/econ-panel";
 import { clientFetchMarkets, clientFetchLeaderboard, type PolyMarket, type Leaderboard } from "@/lib/polymarket";
 import { cn } from "@/lib/utils";
@@ -209,7 +209,6 @@ function MarketsFeedPage() {
           <aside className="hidden lg:flex flex-col gap-3">
             <BreakingNews />
             <CommunityComments />
-            {markets.length > 0 && <Watchlist markets={markets} />}
           </aside>
           <main className="flex flex-col gap-4 min-w-0">
             {featured && !loading && (
@@ -234,8 +233,6 @@ function MarketsFeedPage() {
             {markets.length > 0 && <MarketPulse markets={markets} />}
             <EconPanel />
             <TraderLeaderboard entries={leaderboard} />
-            {markets.length > 0 && <AIPredictions markets={markets} />}
-            {markets.length > 0 && <HotTopics markets={markets} />}
           </aside>
         </div>
       </div>

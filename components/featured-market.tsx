@@ -63,6 +63,8 @@ export function FeaturedMarket({ market, onBuy }: FeaturedMarketProps) {
   const prices    = parseOutcomePrices(market.outcomePrices);
   const yesPrice  = prices[0] ?? 0.5;
   const yesPct    = Math.round(yesPrice * 100);
+  const vol       = market.volumeNum ?? market.volume ?? 0;
+  const hasVolume = vol > 0;
 
   // Extract clobTokenId[0] — this is what the CLOB prices-history API needs
   const tokenId = useMemo(() => {
@@ -124,17 +126,21 @@ export function FeaturedMarket({ market, onBuy }: FeaturedMarketProps) {
               {market.question}
             </Link>
             <div className="mt-1 flex items-center gap-2">
-              <div className={cn("flex items-center gap-1 text-sm font-bold", isPositive ? "text-yes" : "text-no")}>
-                {isPositive ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
-                <span>{yesPct}%</span>
-                <span className="text-xs font-normal opacity-80">
-                  {isPositive ? "+" : ""}{priceChange}pts
-                </span>
-              </div>
+              {hasVolume ? (
+                <div className={cn("flex items-center gap-1 text-sm font-bold", isPositive ? "text-yes" : "text-no")}>
+                  {isPositive ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
+                  <span>{yesPct}%</span>
+                  <span className="text-xs font-normal opacity-80">
+                    {isPositive ? "+" : ""}{priceChange}pts
+                  </span>
+                </div>
+              ) : (
+                <span className="text-sm text-muted-foreground">No trades yet</span>
+              )}
               <span className="text-muted-foreground text-xs">·</span>
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
                 <BarChart2 className="h-3 w-3" />
-                {formatVolume(market.volumeNum ?? market.volume)}
+                {formatVolume(vol)}
               </div>
             </div>
           </div>
@@ -236,7 +242,7 @@ export function FeaturedMarket({ market, onBuy }: FeaturedMarketProps) {
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
-              Yes {yesPct}¢
+              {hasVolume ? `Yes $${(yesPct / 100).toFixed(2)}` : "Yes $0.50"}
             </button>
             <button
               onClick={() => setTradeType("no")}
@@ -247,7 +253,7 @@ export function FeaturedMarket({ market, onBuy }: FeaturedMarketProps) {
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
-              No {100 - yesPct}¢
+              {hasVolume ? `No $${((100 - yesPct) / 100).toFixed(2)}` : "No $0.50"}
             </button>
           </div>
 
@@ -290,7 +296,9 @@ export function FeaturedMarket({ market, onBuy }: FeaturedMarketProps) {
             <div className="flex justify-between text-xs">
               <span className="text-muted-foreground">Avg price</span>
               <span className="font-mono text-foreground">
-                {tradeType === "yes" ? `${yesPct}¢` : `${100 - yesPct}¢`}
+                {hasVolume
+                  ? (tradeType === "yes" ? `$${(yesPct / 100).toFixed(2)}` : `$${((100 - yesPct) / 100).toFixed(2)}`)
+                  : "$0.50"}
               </span>
             </div>
             <div className="flex justify-between text-xs">

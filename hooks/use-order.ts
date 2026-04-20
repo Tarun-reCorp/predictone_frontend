@@ -8,6 +8,7 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 export interface PlacedOrder {
   _id: string;
   conditionId: string;
+  marketId?: string;
   marketQuestion: string;
   outcome: "Yes" | "No";
   side: "buy" | "sell";
@@ -16,15 +17,13 @@ export interface PlacedOrder {
   price: number;
   size: number;
   status: string;
-  polymarketOrderId?: string;
   createdAt: string;
 }
 
 interface PlaceOrderParams {
-  conditionId: string;
+  marketId: string;         // our DB market _id, slug, or conditionId
   outcome: "Yes" | "No";
-  amount: number;        // USDC amount user wants to spend
-  price: number;         // current market price (0–1)
+  amount: number;           // dollar amount user wants to spend
   marketQuestion?: string;
 }
 
@@ -36,7 +35,7 @@ export function useOrder() {
   const [lastOrder, setLastOrder]   = useState<PlacedOrder | null>(null);
 
   const placeOrder = useCallback(
-    async ({ conditionId, outcome, amount, price, marketQuestion }: PlaceOrderParams): Promise<PlacedOrder> => {
+    async ({ marketId, outcome, amount, marketQuestion }: PlaceOrderParams): Promise<PlacedOrder> => {
       setError(null);
       setIsPlacing(true);
       try {
@@ -47,12 +46,12 @@ export function useOrder() {
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
-            conditionId,
+            marketId,
             outcome,
             side: "buy",
             orderType: "market",
             amount,
-            price: Math.min(0.999, Math.max(0.001, price)),
+            price: 50,   // default 50% — backend normalizes to 0.50
             ...(marketQuestion ? { marketQuestion } : {}),
           }),
         });
@@ -80,9 +79,8 @@ export function useOrder() {
     clearError: () => setError(null),
     lastOrder,
     clearOrder: () => setLastOrder(null),
-    // Guards — wallet connect no longer required; orders execute via platform wallet
     isLoggedIn: !!user,
-    hasWallet:  true,   // always true — platform wallet handles execution
+    hasWallet:  true,
     canTrade:   !!user,
   };
 }

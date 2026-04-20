@@ -219,49 +219,49 @@ export default function MerchantsPage() {
       <div className="rounded-xl border border-border overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-border bg-secondary/50">
-              <th className="px-4 py-3 text-left font-semibold text-muted-foreground">Name</th>
-              <th className="px-4 py-3 text-left font-semibold text-muted-foreground">Email</th>
-              <th className="px-4 py-3 text-left font-semibold text-muted-foreground">Status</th>
-              <th className="px-4 py-3 text-right font-semibold text-muted-foreground">Wallet</th>
-              <th className="px-4 py-3 text-right font-semibold text-muted-foreground">Commission Paid</th>
-              <th className="px-4 py-3 text-left font-semibold text-muted-foreground">Joined</th>
-              <th className="px-4 py-3 text-right font-semibold text-muted-foreground">Actions</th>
+            <tr className="border-b border-border bg-secondary/30">
+              <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Name</th>
+              <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Email</th>
+              <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Status</th>
+              <th className="px-5 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Wallet</th>
+              <th className="px-5 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Commission Paid</th>
+              <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Joined</th>
+              <th className="px-5 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Actions</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-border/60">
             {fetching ? (
-              <tr><td colSpan={7} className="px-4 py-10 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></td></tr>
+              <tr><td colSpan={7} className="px-5 py-10 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-10 text-center text-muted-foreground text-sm">No merchants found</td></tr>
+              <tr><td colSpan={7} className="px-5 py-10 text-center text-muted-foreground text-sm">No merchants found</td></tr>
             ) : (
               filtered.map(m => (
-                <tr key={m._id} className="border-b border-border last:border-0 hover:bg-secondary/30 transition-colors">
-                  <td className="px-4 py-3">
+                <tr key={m._id} className="hover:bg-secondary/20 transition-colors">
+                  <td className="px-5 py-4">
                     <div className="flex items-center gap-2.5">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-brand/20 text-brand text-[10px] font-bold shrink-0">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-brand/20 text-brand text-xs font-bold shrink-0">
                         {m.name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()}
                       </div>
-                      <span className="font-medium text-foreground">{m.name}</span>
+                      <span className="text-sm font-medium text-foreground">{m.name}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">{m.email}</td>
-                  <td className="px-4 py-3">
-                    <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold",
+                  <td className="px-5 py-4 text-sm text-muted-foreground">{m.email}</td>
+                  <td className="px-5 py-4">
+                    <span className={cn("inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold capitalize",
                       m.status === "active" ? "bg-yes/15 text-yes" : "bg-no/15 text-no")}>
                       {m.status}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-5 py-4 text-right">
                     <span className="font-mono text-sm text-yes font-semibold">${(m.walletBalance ?? 0).toFixed(2)}</span>
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-5 py-4 text-right">
                     <span className="font-mono text-sm text-chart-4">${(m.totalCommissionPaid ?? 0).toFixed(2)}</span>
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">
+                  <td className="px-5 py-4 text-sm text-muted-foreground">
                     {new Date(m.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-5 py-4">
                     <div className="flex items-center gap-1 justify-end">
                       <button onClick={() => openView(m)} title="View"
                         className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">

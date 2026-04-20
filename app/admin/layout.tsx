@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  LayoutDashboard, TrendingUp, BarChart2, Settings,
+  LayoutDashboard, TrendingUp, Settings,
   ChevronRight, Bell, CircleDot,
   LogOut, ChevronDown, ShoppingBag, ArrowUpDown,
   ArrowUpCircle, Wallet, CheckCircle2, AlertCircle,
@@ -23,7 +23,6 @@ const NAV_ITEMS = [
   { label: "Topup",         href: "/admin/topup",          icon: HandCoins       },
   { label: "Wallet",        href: "/admin/wallet",         icon: Wallet          },
   { label: "Markets",       href: "/admin/markets",        icon: TrendingUp      },
-  { label: "Trades",        href: "/admin/trades",         icon: BarChart2       },
   { label: "Merchants",     href: "/admin/merchants",      icon: CreditCard      },
   { label: "Settings",      href: "/admin/settings",       icon: Settings        },
 ];

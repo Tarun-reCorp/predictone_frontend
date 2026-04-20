@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   TrendingUp, TrendingDown, Loader2, CheckCircle2,
-  AlertCircle, Wallet, LogIn, ExternalLink,
+  AlertCircle, LogIn,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useOrder, type PlacedOrder } from "@/hooks/use-order";
@@ -18,40 +18,36 @@ interface BuyModalProps {
   open: boolean;
   onClose: () => void;
   outcome: "Yes" | "No" | null;
-  price: number;           // 0–1  (e.g. 0.65 = 65¢)
-  conditionId: string;
+  marketId: string;          // DB market _id, slug, or conditionId
   marketQuestion: string;
-  initialAmount?: number;         // pre-fill amount from trade panel
-  onLoginRequired: () => void;    // open auth modal
-  onWalletRequired: () => void;   // open wallet connect
+  initialAmount?: number;
+  onLoginRequired: () => void;
+  onWalletRequired: () => void;
 }
 
-const MIN_AMOUNT = 1;   // $1 USDC minimum
+const MIN_AMOUNT = 1;   // $1 minimum
 const MAX_AMOUNT = 10_000;
 
 export function BuyModal({
   open,
   onClose,
   outcome,
-  price,
-  conditionId,
+  marketId,
   marketQuestion,
   initialAmount,
   onLoginRequired,
   onWalletRequired,
 }: BuyModalProps) {
-  const { placeOrder, isPlacing, error, clearError, isLoggedIn, hasWallet } = useOrder();
+  const { placeOrder, isPlacing, error, clearError, isLoggedIn } = useOrder();
 
   const [amount, setAmount]             = useState(initialAmount ? String(initialAmount) : "");
   const [successOrder, setSuccessOrder] = useState<PlacedOrder | null>(null);
 
-  const isYes       = outcome === "Yes";
-  const pricePct    = Math.round(price * 100);
-  const numAmount   = parseFloat(amount) || 0;
-  const estimShares = numAmount > 0 && price > 0 ? (numAmount / price).toFixed(2) : "—";
-  const isValid     = numAmount >= MIN_AMOUNT && numAmount <= MAX_AMOUNT;
+  const isYes     = outcome === "Yes";
+  const numAmount = parseFloat(amount) || 0;
+  const isValid   = numAmount >= MIN_AMOUNT && numAmount <= MAX_AMOUNT;
 
-  // Reset / pre-fill state when modal opens/closes
+  // Reset state when modal opens/closes
   useEffect(() => {
     if (open) {
       setAmount(initialAmount && initialAmount > 0 ? String(initialAmount) : "");
@@ -62,11 +58,10 @@ export function BuyModal({
 
   const handleSubmit = async () => {
     if (!isLoggedIn) { onClose(); onLoginRequired(); return; }
-    // Wallet connect no longer required — orders execute via platform wallet
     if (!isValid || !outcome) return;
 
     try {
-      const order = await placeOrder({ conditionId, outcome, amount: numAmount, price, marketQuestion });
+      const order = await placeOrder({ marketId, outcome, amount: numAmount, marketQuestion });
       setSuccessOrder(order);
     } catch {
       // error shown via useOrder().error
@@ -78,7 +73,7 @@ export function BuyModal({
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent className="max-w-sm p-0 overflow-hidden border border-border bg-card">
-        {/* ── Header ── */}
+        {/* Header */}
         <DialogHeader className={cn(
           "px-5 py-4 border-b border-border/50",
           isYes ? "bg-yes/5" : "bg-no/5"
@@ -96,7 +91,7 @@ export function BuyModal({
 
         <div className="p-5 space-y-4">
 
-          {/* ── Success state ── */}
+          {/* Success state */}
           {successOrder ? (
             <div className="space-y-4">
               <div className="flex flex-col items-center gap-3 py-4 text-center">
@@ -115,8 +110,6 @@ export function BuyModal({
                 {[
                   { label: "Outcome",  value: successOrder.outcome, color: isYes ? "text-yes" : "text-no" },
                   { label: "Amount",   value: `$${successOrder.amount.toFixed(2)}` },
-                  { label: "Price",    value: `${Math.round(successOrder.price * 100)}¢` },
-                  { label: "Shares",   value: successOrder.size.toFixed(2) },
                   { label: "Status",   value: successOrder.status, color: "text-brand capitalize" },
                 ].map((row) => (
                   <div key={row.label} className="flex items-center justify-between px-3 py-2">
@@ -137,7 +130,7 @@ export function BuyModal({
             </div>
           ) : (
             <>
-              {/* ── Not logged in ── */}
+              {/* Not logged in */}
               {!isLoggedIn && (
                 <div className="flex items-start gap-2 rounded-lg border border-border bg-secondary px-4 py-3">
                   <LogIn className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
@@ -151,22 +144,9 @@ export function BuyModal({
                 </div>
               )}
 
-              {/* Orders execute via platform wallet — no merchant wallet needed */}
-
-              {/* ── Price pill ── */}
-              <div className="flex items-center justify-between rounded-lg bg-secondary border border-border px-4 py-2.5">
-                <span className="text-xs text-muted-foreground">Current price</span>
-                <span className={cn(
-                  "text-sm font-bold font-mono",
-                  isYes ? "text-yes" : "text-no"
-                )}>
-                  {pricePct}¢
-                </span>
-              </div>
-
-              {/* ── Amount input ── */}
+              {/* Amount input */}
               <div className="space-y-2">
-                <label className="text-xs font-medium text-muted-foreground">Amount (USDC)</label>
+                <label className="text-xs font-medium text-muted-foreground">Amount ($)</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span>
                   <input
@@ -200,23 +180,25 @@ export function BuyModal({
                 </div>
               </div>
 
-              {/* ── Summary ── */}
+              {/* Summary */}
               {numAmount > 0 && (
                 <div className="rounded-lg border border-border bg-secondary/50 divide-y divide-border/50 text-xs">
-                  {[
-                    { label: "Price per share", value: `${pricePct}¢` },
-                    { label: "Est. shares",      value: estimShares },
-                    { label: "Total cost",        value: `$${numAmount.toFixed(2)}` },
-                  ].map((row) => (
-                    <div key={row.label} className="flex items-center justify-between px-3 py-2">
-                      <span className="text-muted-foreground">{row.label}</span>
-                      <span className="font-medium font-mono text-foreground">{row.value}</span>
-                    </div>
-                  ))}
+                  <div className="flex items-center justify-between px-3 py-2">
+                    <span className="text-muted-foreground">Order amount</span>
+                    <span className="font-medium font-mono text-foreground">${numAmount.toFixed(2)}</span>
+                  </div>
+                  <div className="flex items-center justify-between px-3 py-2">
+                    <span className="text-muted-foreground">Commission</span>
+                    <span className="font-medium font-mono text-muted-foreground">Applied as per rule</span>
+                  </div>
+                  <div className="flex items-center justify-between px-3 py-2">
+                    <span className="text-muted-foreground">Outcome</span>
+                    <span className={cn("font-semibold", isYes ? "text-yes" : "text-no")}>{outcome}</span>
+                  </div>
                 </div>
               )}
 
-              {/* ── Error ── */}
+              {/* Error */}
               {error && (
                 <div className="flex items-start gap-2 rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-3">
                   <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
@@ -224,7 +206,7 @@ export function BuyModal({
                 </div>
               )}
 
-              {/* ── Place Order button ── */}
+              {/* Place Order button */}
               <button
                 onClick={handleSubmit}
                 disabled={isPlacing || (!isLoggedIn ? false : !isValid)}
@@ -236,7 +218,7 @@ export function BuyModal({
                 )}
               >
                 {isPlacing ? (
-                  <><Loader2 className="h-4 w-4 animate-spin" /> Placing Order…</>
+                  <><Loader2 className="h-4 w-4 animate-spin" /> Placing Order...</>
                 ) : !isLoggedIn ? (
                   <><LogIn className="h-4 w-4" /> Log In to Trade</>
                 ) : (
@@ -245,11 +227,7 @@ export function BuyModal({
               </button>
 
               <p className="text-center text-[10px] text-muted-foreground">
-                Min ${MIN_AMOUNT} · Orders are submitted to Polymarket CLOB ·{" "}
-                <a href="https://polymarket.com" target="_blank" rel="noopener noreferrer"
-                   className="text-brand hover:underline inline-flex items-center gap-0.5">
-                  View on Polymarket <ExternalLink className="h-2.5 w-2.5" />
-                </a>
+                Min ${MIN_AMOUNT} · Commission will be deducted from wallet · All trades in dollars
               </p>
             </>
           )}

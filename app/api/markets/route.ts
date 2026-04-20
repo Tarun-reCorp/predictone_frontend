@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const res = await fetch(`${BACKEND}/api/polymarket/markets?${query.toString()}`, {
+    const res = await fetch(`${BACKEND}/api/markets?${query.toString()}`, {
       headers: { "Accept": "application/json" },
       next: { revalidate: 60 },
     });

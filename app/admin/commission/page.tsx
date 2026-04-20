@@ -114,7 +114,7 @@ export default function CommissionPage() {
                     return (
                       <tr key={rule._id} className="hover:bg-secondary/20 transition-colors">
                         <td className="px-5 py-4">
-                          <p className="font-medium text-foreground">{rule.userId?.name ?? "—"}</p>
+                          <p className="text-sm font-medium text-foreground">{rule.userId?.name ?? "—"}</p>
                           <p className="text-xs text-muted-foreground">{rule.userId?.email ?? ""}</p>
                         </td>
                         <td className="px-5 py-4">
@@ -123,7 +123,7 @@ export default function CommissionPage() {
                               onChange={e => setEditData(d => ({ ...d, threshold: parseFloat(e.target.value) }))}
                               className="w-24 rounded border border-border bg-secondary px-2 py-1 text-sm text-foreground outline-none focus:border-brand/50"
                             />
-                          ) : <span className="font-mono">${rule.threshold}</span>}
+                          ) : <span className="font-mono text-sm text-foreground">${rule.threshold}</span>}
                         </td>
                         <td className="px-5 py-4">
                           {isEditing ? (
@@ -131,7 +131,7 @@ export default function CommissionPage() {
                               onChange={e => setEditData(d => ({ ...d, flatAmount: parseFloat(e.target.value) }))}
                               className="w-20 rounded border border-border bg-secondary px-2 py-1 text-sm text-foreground outline-none focus:border-brand/50"
                             />
-                          ) : <span className="font-mono text-chart-4">${rule.flatAmount}</span>}
+                          ) : <span className="font-mono text-sm text-chart-4">${rule.flatAmount}</span>}
                         </td>
                         <td className="px-5 py-4">
                           {isEditing ? (
@@ -139,7 +139,7 @@ export default function CommissionPage() {
                               onChange={e => setEditData(d => ({ ...d, percentageRate: parseFloat(e.target.value) }))}
                               className="w-20 rounded border border-border bg-secondary px-2 py-1 text-sm text-foreground outline-none focus:border-brand/50"
                             />
-                          ) : <span className="font-mono text-brand">{rule.percentageRate}%</span>}
+                          ) : <span className="font-mono text-sm text-brand">{rule.percentageRate}%</span>}
                         </td>
                         <td className="px-5 py-4">
                           {isEditing ? (

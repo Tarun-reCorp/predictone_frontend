@@ -204,11 +204,11 @@ export default function AdminFundRequestsPage() {
                     return (
                       <tr key={req._id} className="hover:bg-secondary/20 transition-colors">
                         <td className="px-5 py-4">
-                          <p className="font-medium text-foreground">{req.userId?.name}</p>
+                          <p className="text-sm font-medium text-foreground">{req.userId?.name}</p>
                           <p className="text-xs text-muted-foreground">{req.userId?.email}</p>
                         </td>
                         <td className="px-5 py-4">
-                          <span className="font-bold font-mono text-foreground">${req.amount.toFixed(2)}</span>
+                          <span className="text-sm font-bold font-mono text-foreground">${req.amount.toFixed(2)}</span>
                           <span className="ml-1 text-xs text-muted-foreground">{req.currency}</span>
                         </td>
                         <td className="px-5 py-4 max-w-[140px]">
@@ -218,12 +218,12 @@ export default function AdminFundRequestsPage() {
                           <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold", s.color, s.bg)}>
                             <s.icon className="h-3 w-3" /> {s.label}
                           </span>
-                          {req.adminNote && <p className="text-[10px] text-muted-foreground mt-1 max-w-[120px] truncate">{req.adminNote}</p>}
+                          {req.adminNote && <p className="text-xs text-muted-foreground mt-1 max-w-[120px] truncate">{req.adminNote}</p>}
                         </td>
                         <td className="px-5 py-4">
                           <span className="font-mono text-sm text-yes">${(req.userId?.walletBalance ?? 0).toFixed(2)}</span>
                         </td>
-                        <td className="px-5 py-4 text-xs text-muted-foreground whitespace-nowrap">{fmt(req.createdAt)}</td>
+                        <td className="px-5 py-4 text-sm text-muted-foreground whitespace-nowrap">{fmt(req.createdAt)}</td>
                         <td className="px-5 py-4">
                           {req.status === "pending" ? (
                             <button onClick={() => { setReviewing(req); setAction("approved"); setAdminNote(""); setReviewError(""); }}

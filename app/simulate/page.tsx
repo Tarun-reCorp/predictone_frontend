@@ -118,13 +118,13 @@ function SimMarketCard({
           onClick={(e) => { e.stopPropagation(); onBuy("Yes", 50); }}
           className="flex-1 rounded-lg py-1.5 text-xs font-semibold bg-yes/10 text-yes hover:bg-yes/20 border border-yes/20 transition-colors"
         >
-          Buy Yes {yesPct}¢
+          Buy Yes ${(yesPct / 100).toFixed(2)}
         </button>
         <button
           onClick={(e) => { e.stopPropagation(); onBuy("No", 50); }}
           className="flex-1 rounded-lg py-1.5 text-xs font-semibold bg-no/10 text-no hover:bg-no/20 border border-no/20 transition-colors"
         >
-          Buy No {noPct}¢
+          Buy No ${(noPct / 100).toFixed(2)}
         </button>
       </div>
     </div>
@@ -179,7 +179,7 @@ export default function SimulatePage() {
         const newTrades = m.trades.slice(old.trades.length);
         newTrades.forEach((t) => {
           if (t.size > 800) {
-            addLog(`Large ${t.side} trade: $${t.size} @ ${Math.round(t.price * 100)}¢ by ${t.trader}`, t.side === "Yes" ? "buy" : "sell");
+            addLog(`Large ${t.side} trade: $${t.size} @ $${t.price.toFixed(2)} by ${t.trader}`, t.side === "Yes" ? "buy" : "sell");
           }
         });
       });
@@ -218,7 +218,7 @@ export default function SimulatePage() {
     }
     setPortfolio(newPortfolio);
     const price = side === "Yes" ? market.currentPrice : 1 - market.currentPrice;
-    addLog(`You bought ${side} $${amount} @ ${Math.round(price * 100)}¢ — "${market.question.slice(0, 35)}..."`, side === "Yes" ? "buy" : "sell");
+    addLog(`You bought ${side} $${amount} @ $${price.toFixed(2)} — "${market.question.slice(0, 35)}..."`, side === "Yes" ? "buy" : "sell");
   }, [markets, portfolio]);
 
   const selectedMarket = markets.find((m) => m.id === selectedId);
@@ -405,13 +405,13 @@ export default function SimulatePage() {
                       onClick={() => handleBuy(selectedMarket.id, "Yes", tradeAmount)}
                       className="flex-1 rounded-lg py-2 text-xs font-bold bg-yes/10 text-yes hover:bg-yes/20 border border-yes/20 transition-colors"
                     >
-                      Buy Yes @ {Math.round(selectedMarket.currentPrice * 100)}¢
+                      Buy Yes @ ${selectedMarket.currentPrice.toFixed(2)}
                     </button>
                     <button
                       onClick={() => handleBuy(selectedMarket.id, "No", tradeAmount)}
                       className="flex-1 rounded-lg py-2 text-xs font-bold bg-no/10 text-no hover:bg-no/20 border border-no/20 transition-colors"
                     >
-                      Buy No @ {Math.round((1 - selectedMarket.currentPrice) * 100)}¢
+                      Buy No @ ${(1 - selectedMarket.currentPrice).toFixed(2)}
                     </button>
                   </div>
                 </div>
@@ -427,7 +427,7 @@ export default function SimulatePage() {
                       </div>
                       <div className="flex items-center gap-2 font-mono">
                         <span className="text-muted-foreground">${t.size}</span>
-                        <span className={cn(t.side === "Yes" ? "text-yes" : "text-no")}>{Math.round(t.price * 100)}¢</span>
+                        <span className={cn(t.side === "Yes" ? "text-yes" : "text-no")}>${t.price.toFixed(2)}</span>
                       </div>
                     </div>
                   ))}
