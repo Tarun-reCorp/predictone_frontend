@@ -220,13 +220,13 @@ export default function MerchantsPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-secondary/30">
-              <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Name</th>
-              <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Email</th>
-              <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Status</th>
-              <th className="px-5 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Wallet</th>
-              <th className="px-5 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Commission Paid</th>
-              <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Joined</th>
-              <th className="px-5 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Actions</th>
+              <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Name</th>
+              <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Email</th>
+              <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Status</th>
+              <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Wallet</th>
+              <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Commission Paid</th>
+              <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Joined</th>
+              <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/60">
@@ -237,7 +237,7 @@ export default function MerchantsPage() {
             ) : (
               filtered.map(m => (
                 <tr key={m._id} className="hover:bg-secondary/20 transition-colors">
-                  <td className="px-5 py-4">
+                  <td className="px-4 py-3">
                     <div className="flex items-center gap-2.5">
                       <div className="flex h-7 w-7 items-center justify-center rounded-full bg-brand/20 text-brand text-xs font-bold shrink-0">
                         {m.name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()}
@@ -245,23 +245,23 @@ export default function MerchantsPage() {
                       <span className="text-sm font-medium text-foreground">{m.name}</span>
                     </div>
                   </td>
-                  <td className="px-5 py-4 text-sm text-muted-foreground">{m.email}</td>
-                  <td className="px-5 py-4">
+                  <td className="px-4 py-3 text-sm text-muted-foreground">{m.email}</td>
+                  <td className="px-4 py-3">
                     <span className={cn("inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold capitalize",
                       m.status === "active" ? "bg-yes/15 text-yes" : "bg-no/15 text-no")}>
                       {m.status}
                     </span>
                   </td>
-                  <td className="px-5 py-4 text-right">
+                  <td className="px-4 py-3 text-right">
                     <span className="font-mono text-sm text-yes font-semibold">${(m.walletBalance ?? 0).toFixed(2)}</span>
                   </td>
-                  <td className="px-5 py-4 text-right">
+                  <td className="px-4 py-3 text-right">
                     <span className="font-mono text-sm text-chart-4">${(m.totalCommissionPaid ?? 0).toFixed(2)}</span>
                   </td>
-                  <td className="px-5 py-4 text-sm text-muted-foreground">
+                  <td className="px-4 py-3 text-sm text-muted-foreground">
                     {new Date(m.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                   </td>
-                  <td className="px-5 py-4">
+                  <td className="px-4 py-3">
                     <div className="flex items-center gap-1 justify-end">
                       <button onClick={() => openView(m)} title="View"
                         className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">

@@ -132,24 +132,24 @@ export default function MerchantTransactionsPage() {
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-secondary/30">
-                    <th className="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground w-12">#</th>
-                    <th className="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Type</th>
-                    <th className="px-6 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Amount</th>
-                    <th className="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Description</th>
-                    <th className="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Status</th>
-                    <th className="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Date</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground w-12">#</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Type</th>
+                    <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Amount</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Description</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Status</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Date</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
                   {txns.map((tx, idx) => (
                     <tr key={tx._id} className="hover:bg-secondary/20 transition-colors">
-                      <td className="px-6 py-4 text-sm text-muted-foreground font-mono">
+                      <td className="px-4 py-3 text-sm text-muted-foreground font-mono">
                         {(page - 1) * 10 + idx + 1}
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-4 py-3">
                         <span className={cn(
                           "inline-flex items-center rounded-md px-2.5 py-1 text-xs font-semibold capitalize",
                           TYPE_STYLE[tx.type] ?? "bg-secondary text-muted-foreground"
@@ -157,7 +157,7 @@ export default function MerchantTransactionsPage() {
                           {tx.type.replace(/_/g, " ")}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-4 py-3 text-right">
                         <span className="text-sm font-semibold font-mono text-foreground">
                           {fmtAmt(tx.amount)}
                         </span>
@@ -165,12 +165,12 @@ export default function MerchantTransactionsPage() {
                           <span className="ml-1.5 text-xs text-muted-foreground">{tx.currency}</span>
                         )}
                       </td>
-                      <td className="px-6 py-4 max-w-xs">
+                      <td className="px-4 py-3 max-w-xs">
                         <p className="truncate text-sm text-muted-foreground">
                           {tx.description || "—"}
                         </p>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-4 py-3">
                         <span className={cn(
                           "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold capitalize",
                           STATUS_STYLE[tx.status] ?? "bg-secondary text-muted-foreground"
@@ -178,7 +178,7 @@ export default function MerchantTransactionsPage() {
                           {tx.status}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-sm text-muted-foreground whitespace-nowrap">
+                      <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">
                         {fmt(tx.createdAt)}
                       </td>
                     </tr>

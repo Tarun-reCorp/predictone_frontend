@@ -130,31 +130,34 @@ export default function MerchantOrdersPage() {
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-secondary/30">
-                    <th className="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground w-12">#</th>
-                    <th className="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Market</th>
-                    <th className="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Outcome</th>
-                    <th className="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Side</th>
-                    <th className="px-6 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Amount</th>
-                    <th className="px-6 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Price</th>
-                    <th className="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Status</th>
-                    <th className="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Date</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground w-12">#</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Order ID</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Market</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Outcome</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Side</th>
+                    <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Amount</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Status</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Date</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
                   {orders.map((o, idx) => (
                     <tr key={o._id} className="hover:bg-secondary/20 transition-colors group">
-                      <td className="px-6 py-4 text-sm text-muted-foreground font-mono">
+                      <td className="px-4 py-3 text-sm text-muted-foreground font-mono">
                         {(page - 1) * 10 + idx + 1}
                       </td>
-                      <td className="px-6 py-4 max-w-xs">
+                      <td className="px-4 py-3 text-sm font-mono text-muted-foreground">
+                        <span title={o._id}>{o._id.slice(-8).toUpperCase()}</span>
+                      </td>
+                      <td className="px-4 py-3 max-w-xs">
                         <p className="truncate text-sm font-medium text-foreground group-hover:text-brand transition-colors">
                           {o.marketQuestion || o.conditionId.slice(0, 20) + "…"}
                         </p>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-4 py-3">
                         <span className={cn(
                           "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold",
                           o.outcome === "Yes" ? "bg-yes/15 text-yes" : "bg-no/15 text-no"
@@ -162,7 +165,7 @@ export default function MerchantOrdersPage() {
                           {o.outcome}
                         </span>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-4 py-3">
                         <span className={cn(
                           "inline-flex items-center rounded-md px-2.5 py-1 text-xs font-semibold capitalize",
                           o.side === "buy" ? "bg-yes/10 text-yes" : "bg-no/10 text-no"
@@ -170,13 +173,10 @@ export default function MerchantOrdersPage() {
                           {o.side}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-4 py-3 text-right">
                         <span className="text-sm font-semibold font-mono text-foreground">{fmtAmt(o.amount)}</span>
                       </td>
-                      <td className="px-6 py-4 text-right">
-                        <span className="text-sm font-mono text-muted-foreground">${o.price.toFixed(2)}</span>
-                      </td>
-                      <td className="px-6 py-4">
+                      <td className="px-4 py-3">
                         <span className={cn(
                           "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold capitalize",
                           STATUS_STYLE[o.status] ?? "bg-secondary text-muted-foreground"
@@ -184,7 +184,7 @@ export default function MerchantOrdersPage() {
                           {o.status}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-sm text-muted-foreground whitespace-nowrap">
+                      <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">
                         {fmt(o.createdAt)}
                       </td>
                     </tr>

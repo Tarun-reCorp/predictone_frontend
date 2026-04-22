@@ -105,7 +105,7 @@ export default function AdminTransactionsPage() {
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full text-xs">
+              <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-secondary/20">
                     {["#", "Merchant", "Type", "Amount", "Description", "Status", "Date"].map((h) => (

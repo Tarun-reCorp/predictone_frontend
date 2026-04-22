@@ -104,7 +104,7 @@ export default function CommissionPage() {
                 <thead>
                   <tr className="border-b border-border bg-secondary/30">
                     {["Merchant", "Threshold", "Flat Fee", "% Rate", "Status", "Updated", "Actions"].map(h => (
-                      <th key={h} className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
+                      <th key={h} className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -113,11 +113,11 @@ export default function CommissionPage() {
                     const isEditing = editId === rule._id;
                     return (
                       <tr key={rule._id} className="hover:bg-secondary/20 transition-colors">
-                        <td className="px-5 py-4">
+                        <td className="px-4 py-3">
                           <p className="text-sm font-medium text-foreground">{rule.userId?.name ?? "—"}</p>
                           <p className="text-xs text-muted-foreground">{rule.userId?.email ?? ""}</p>
                         </td>
-                        <td className="px-5 py-4">
+                        <td className="px-4 py-3">
                           {isEditing ? (
                             <input type="number" min="0" step="1" value={editData.threshold ?? rule.threshold}
                               onChange={e => setEditData(d => ({ ...d, threshold: parseFloat(e.target.value) }))}
@@ -125,7 +125,7 @@ export default function CommissionPage() {
                             />
                           ) : <span className="font-mono text-sm text-foreground">${rule.threshold}</span>}
                         </td>
-                        <td className="px-5 py-4">
+                        <td className="px-4 py-3">
                           {isEditing ? (
                             <input type="number" min="0" step="0.01" value={editData.flatAmount ?? rule.flatAmount}
                               onChange={e => setEditData(d => ({ ...d, flatAmount: parseFloat(e.target.value) }))}
@@ -133,7 +133,7 @@ export default function CommissionPage() {
                             />
                           ) : <span className="font-mono text-sm text-chart-4">${rule.flatAmount}</span>}
                         </td>
-                        <td className="px-5 py-4">
+                        <td className="px-4 py-3">
                           {isEditing ? (
                             <input type="number" min="0" max="100" step="0.1" value={editData.percentageRate ?? rule.percentageRate}
                               onChange={e => setEditData(d => ({ ...d, percentageRate: parseFloat(e.target.value) }))}
@@ -141,7 +141,7 @@ export default function CommissionPage() {
                             />
                           ) : <span className="font-mono text-sm text-brand">{rule.percentageRate}%</span>}
                         </td>
-                        <td className="px-5 py-4">
+                        <td className="px-4 py-3">
                           {isEditing ? (
                             <button onClick={() => setEditData(d => ({ ...d, isActive: !d.isActive }))}
                               className={cn("flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition-colors",
@@ -156,10 +156,10 @@ export default function CommissionPage() {
                             </span>
                           )}
                         </td>
-                        <td className="px-5 py-4 text-xs text-muted-foreground">
+                        <td className="px-4 py-3 text-xs text-muted-foreground">
                           {new Date(rule.updatedAt).toLocaleDateString()}
                         </td>
-                        <td className="px-5 py-4">
+                        <td className="px-4 py-3">
                           {isEditing ? (
                             <div className="flex items-center gap-1">
                               {saveError && <span className="text-xs text-destructive mr-2">{saveError}</span>}

@@ -1,13 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   ArrowUpCircle, Clock, CheckCircle2, XCircle,
   ChevronLeft, ChevronRight, Loader2, Plus, X,
-  Wallet, Copy, Check, ExternalLink,
+  Filter, CalendarClock, ListChecks,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
+import { TABLE } from "@/lib/table-styles";
+import { SummaryCards, type SummaryCardItem } from "@/components/summary-cards";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -23,6 +25,14 @@ interface FundRequest {
   reviewedAt?: string;
 }
 
+interface Summary {
+  approved: number;
+  pending: number;
+  rejected: number;
+  today: number;
+  total: number;
+}
+
 const STATUS_STYLE = {
   pending:  { label: "Pending",  color: "text-chart-4", bg: "bg-chart-4/15", icon: Clock },
   approved: { label: "Approved", color: "text-yes",     bg: "bg-yes/15",     icon: CheckCircle2 },
@@ -36,14 +46,11 @@ function fmt(iso: string) {
 export default function FundRequestsPage() {
   const { token } = useAuth();
   const [requests, setRequests] = useState<FundRequest[]>([]);
+  const [summary, setSummary]   = useState<Summary>({ approved: 0, pending: 0, rejected: 0, today: 0, total: 0 });
   const [loading, setLoading]   = useState(true);
   const [page, setPage]         = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [total, setTotal]       = useState(0);
-
-  // Admin wallet
-  const [adminWallet, setAdminWallet] = useState<{ configured: boolean; address: string | null } | null>(null);
-  const [addrCopied, setAddrCopied]   = useState(false);
+  const [filterStatus, setFilterStatus] = useState("");
 
   // Form state
   const [showForm, setShowForm] = useState(false);
@@ -54,33 +61,26 @@ export default function FundRequestsPage() {
   const [formError, setFormError]   = useState("");
   const [formSuccess, setFormSuccess] = useState("");
 
-  const load = () => {
+  const load = useCallback(() => {
     if (!token) return;
     setLoading(true);
-    fetch(`${API}/api/merchant/fund-requests?page=${page}&limit=10`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
-      .then(d => { setRequests(d.data ?? []); setTotalPages(d.meta?.totalPages ?? 1); setTotal(d.meta?.total ?? 0); })
+    const q = new URLSearchParams({ page: String(page), limit: "15" });
+    if (filterStatus) q.set("status", filterStatus);
+
+    Promise.all([
+      fetch(`${API}/api/merchant/fund-requests?${q}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+      fetch(`${API}/api/merchant/fund-requests/summary`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+    ])
+      .then(([list, sum]) => {
+        setRequests(list.data ?? []);
+        setTotalPages(list.meta?.totalPages ?? 1);
+        if (sum?.data) setSummary(sum.data);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
-  };
+  }, [token, page, filterStatus]);
 
-  useEffect(load, [token, page]);
-
-  // Fetch admin wallet address
-  useEffect(() => {
-    if (!token) return;
-    fetch(`${API}/api/merchant/admin-wallet`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
-      .then(d => setAdminWallet(d.data))
-      .catch(() => {});
-  }, [token]);
-
-  const copyWalletAddr = async () => {
-    if (!adminWallet?.address) return;
-    await navigator.clipboard.writeText(adminWallet.address);
-    setAddrCopied(true);
-    setTimeout(() => setAddrCopied(false), 2000);
-  };
+  useEffect(() => { load(); }, [load]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,19 +98,26 @@ export default function FundRequestsPage() {
       if (!res.ok) throw new Error(data.message ?? "Failed");
       setFormSuccess("Fund request submitted! Admin will review it.");
       setAmount(""); setRef(""); setNote("");
-      setTimeout(() => { setShowForm(false); setFormSuccess(""); load(); }, 2000);
+      setTimeout(() => { setShowForm(false); setFormSuccess(""); load(); }, 1500);
     } catch (err: unknown) {
       setFormError(err instanceof Error ? err.message : "Failed to submit");
     } finally { setSubmitting(false); }
   };
 
+  const cards: SummaryCardItem[] = [
+    { label: "Total",     value: summary.total,    icon: ListChecks,    tone: "default" },
+    { label: "Approved",  value: summary.approved, icon: CheckCircle2,  tone: "yes" },
+    { label: "Pending",   value: summary.pending,  icon: Clock,         tone: "warn" },
+    { label: "Today",     value: summary.today,    icon: CalendarClock, tone: "brand" },
+  ];
+
   return (
-    <div className="flex flex-col gap-6 max-w-4xl">
+    <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Fund Requests</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {total > 0 ? `${total} total requests` : "Request wallet top-ups from admin"}
+            Submit UTR / transaction references after paying to top-up your wallet.
           </p>
         </div>
         <button
@@ -121,47 +128,8 @@ export default function FundRequestsPage() {
         </button>
       </div>
 
-      {/* Admin wallet address card */}
-      {adminWallet?.configured && adminWallet.address && (
-        <div className="rounded-xl border border-brand/20 bg-brand/5 p-5">
-          <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand/15 shrink-0">
-              <Wallet className="h-5 w-5 text-brand" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-foreground">Admin Wallet Address</p>
-              <p className="text-xs text-muted-foreground mt-0.5 mb-3">
-                Send USDC to this address on <span className="font-semibold text-purple-400">Polygon</span> network, then submit a fund request with the transaction reference.
-              </p>
-              <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2.5">
-                <code className="text-xs font-mono text-foreground flex-1 truncate">
-                  {adminWallet.address}
-                </code>
-                <button
-                  onClick={copyWalletAddr}
-                  className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-secondary transition-colors shrink-0"
-                  title="Copy address"
-                >
-                  {addrCopied ? (
-                    <Check className="h-3.5 w-3.5 text-yes" />
-                  ) : (
-                    <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-                  )}
-                </button>
-                <a
-                  href={`https://polygonscan.com/address/${adminWallet.address}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-secondary transition-colors shrink-0"
-                  title="View on Polygonscan"
-                >
-                  <ExternalLink className="h-3.5 w-3.5 text-brand" />
-                </a>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Summary cards */}
+      <SummaryCards items={cards} />
 
       {/* New request modal */}
       {showForm && (
@@ -176,7 +144,7 @@ export default function FundRequestsPage() {
               {formSuccess && <div className="rounded-lg bg-yes/10 border border-yes/20 px-4 py-2.5 text-sm text-yes">{formSuccess}</div>}
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-foreground">Amount (USDC) *</label>
+                <label className="text-sm font-medium text-foreground">Amount *</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span>
                   <input
@@ -188,7 +156,7 @@ export default function FundRequestsPage() {
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-foreground">Payment Reference</label>
+                <label className="text-sm font-medium text-foreground">UTR / Payment Reference</label>
                 <input
                   type="text" value={ref} onChange={e => setRef(e.target.value)}
                   placeholder="Transaction ID, receipt no., etc."
@@ -222,9 +190,22 @@ export default function FundRequestsPage() {
       )}
 
       {/* Table */}
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
-        <div className="px-6 py-4 border-b border-border">
+      <div className={TABLE.wrapper}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <p className="text-sm font-semibold text-foreground">Request History</p>
+          <div className="flex items-center gap-2">
+            <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+            <select
+              value={filterStatus}
+              onChange={(e) => { setFilterStatus(e.target.value); setPage(1); }}
+              className="rounded-md border border-border bg-secondary text-xs text-foreground px-2.5 py-1.5 outline-none"
+            >
+              <option value="">All status</option>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+            </select>
+          </div>
         </div>
         {loading ? (
           <div className="flex justify-center py-16"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
@@ -232,43 +213,46 @@ export default function FundRequestsPage() {
           <div className="flex flex-col items-center py-16 gap-2 text-center">
             <ArrowUpCircle className="h-9 w-9 text-muted-foreground/30" />
             <p className="text-sm text-muted-foreground">No fund requests yet</p>
-            <p className="text-xs text-muted-foreground/60">Click "New Request" to top up your wallet</p>
+            <p className="text-xs text-muted-foreground/60">Click &quot;New Request&quot; to top up your wallet</p>
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto">
-              <table className="w-full">
+            <div className={TABLE.scroll}>
+              <table className={TABLE.table}>
                 <thead>
-                  <tr className="border-b border-border bg-secondary/30">
-                    {["Amount", "Reference", "Note", "Status", "Admin Note", "Date"].map(h => (
-                      <th key={h} className={cn("px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground", h === "Amount" ? "text-right" : "")}>{h}</th>
-                    ))}
+                  <tr className={TABLE.thead}>
+                    <th className={TABLE.thRight}>Amount</th>
+                    <th className={TABLE.th}>UTR / Ref</th>
+                    <th className={TABLE.th}>Note</th>
+                    <th className={TABLE.th}>Status</th>
+                    <th className={TABLE.th}>Admin Note</th>
+                    <th className={TABLE.th}>Date</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border/60">
+                <tbody className={TABLE.tbody}>
                   {requests.map(req => {
                     const s = STATUS_STYLE[req.status];
                     return (
-                      <tr key={req._id} className="hover:bg-secondary/20 transition-colors">
-                        <td className="px-5 py-4 text-right">
-                          <span className="text-sm font-bold font-mono text-foreground">${req.amount.toFixed(2)}</span>
+                      <tr key={req._id} className={TABLE.row}>
+                        <td className={TABLE.tdRight}>
+                          <span className="font-mono font-bold text-foreground">${req.amount.toFixed(2)}</span>
                           <span className="ml-1 text-xs text-muted-foreground">{req.currency}</span>
                         </td>
-                        <td className="px-5 py-4 max-w-[160px]">
-                          <p className="text-sm text-muted-foreground truncate">{req.paymentReference || "—"}</p>
+                        <td className={cn(TABLE.tdMuted, "max-w-[160px]")}>
+                          <p className="truncate">{req.paymentReference || "—"}</p>
                         </td>
-                        <td className="px-5 py-4 max-w-[180px]">
-                          <p className="text-sm text-muted-foreground truncate">{req.merchantNote || "—"}</p>
+                        <td className={cn(TABLE.tdMuted, "max-w-[180px]")}>
+                          <p className="truncate">{req.merchantNote || "—"}</p>
                         </td>
-                        <td className="px-5 py-4">
+                        <td className={TABLE.td}>
                           <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold", s.color, s.bg)}>
                             <s.icon className="h-3 w-3" /> {s.label}
                           </span>
                         </td>
-                        <td className="px-5 py-4 max-w-[180px]">
-                          <p className="text-sm text-muted-foreground truncate">{req.adminNote || "—"}</p>
+                        <td className={cn(TABLE.tdMuted, "max-w-[180px]")}>
+                          <p className="truncate">{req.adminNote || "—"}</p>
                         </td>
-                        <td className="px-5 py-4 text-sm text-muted-foreground whitespace-nowrap">{fmt(req.createdAt)}</td>
+                        <td className={cn(TABLE.tdMuted, "whitespace-nowrap")}>{fmt(req.createdAt)}</td>
                       </tr>
                     );
                   })}
@@ -276,16 +260,16 @@ export default function FundRequestsPage() {
               </table>
             </div>
             {totalPages > 1 && (
-              <div className="flex items-center justify-between px-6 py-4 border-t border-border bg-secondary/10">
-                <span className="text-sm text-muted-foreground">Page <b>{page}</b> of <b>{totalPages}</b></span>
+              <div className={TABLE.footer}>
+                <span className="text-muted-foreground">Page <b>{page}</b> of <b>{totalPages}</b></span>
                 <div className="flex gap-2">
                   <button onClick={() => setPage(p => p - 1)} disabled={page <= 1}
-                    className="flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors">
-                    <ChevronLeft className="h-4 w-4" /> Prev
+                    className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors">
+                    <ChevronLeft className="h-3.5 w-3.5" /> Prev
                   </button>
                   <button onClick={() => setPage(p => p + 1)} disabled={page >= totalPages}
-                    className="flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors">
-                    Next <ChevronRight className="h-4 w-4" />
+                    className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors">
+                    Next <ChevronRight className="h-3.5 w-3.5" />
                   </button>
                 </div>
               </div>

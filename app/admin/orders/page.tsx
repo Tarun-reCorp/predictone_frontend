@@ -12,7 +12,7 @@ const BACKEND = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 interface AdminOrder {
   _id: string;
-  merchantId?: { name?: string } | string;
+  userId?: { _id?: string; name?: string; email?: string } | string;
   conditionId: string;
   marketQuestion?: string;
   outcome: "Yes" | "No";
@@ -113,9 +113,9 @@ export default function AdminOrdersPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-secondary/30">
-                    {["#", "Merchant", "Market", "Outcome", "Side", "Amount", "Status", "Date"].map((h) => (
+                    {["#", "Order ID", "Merchant", "Market", "Outcome", "Side", "Amount", "Status", "Date"].map((h) => (
                       <th key={h} className={cn(
-                        "px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground",
+                        "px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground",
                         h === "Amount" ? "text-right" : "text-left"
                       )}>{h}</th>
                     ))}
@@ -123,33 +123,37 @@ export default function AdminOrdersPage() {
                 </thead>
                 <tbody className="divide-y divide-border/60">
                   {orders.map((o, idx) => {
-                    const merchant = typeof o.merchantId === "object" ? o.merchantId : null;
+                    const merchant = typeof o.userId === "object" ? o.userId : null;
                     return (
                       <tr key={o._id} className="hover:bg-secondary/20 transition-colors">
-                        <td className="px-5 py-4 text-sm text-muted-foreground font-mono">{(page - 1) * 10 + idx + 1}</td>
-                        <td className="px-5 py-4 text-sm text-foreground">
-                          {merchant?.name ?? (typeof o.merchantId === "string" ? o.merchantId.slice(0, 8) + "…" : "—")}
+                        <td className="px-4 py-3 text-sm text-muted-foreground font-mono">{(page - 1) * 10 + idx + 1}</td>
+                        <td className="px-4 py-3 text-sm font-mono text-muted-foreground">
+                          <span title={o._id}>{o._id.slice(-8).toUpperCase()}</span>
                         </td>
-                        <td className="px-5 py-4 max-w-[180px]">
+                        <td className="px-4 py-3 text-sm text-foreground">
+                          <p className="font-medium">{merchant?.name ?? "—"}</p>
+                          {merchant?.email && <p className="text-xs text-muted-foreground">{merchant.email}</p>}
+                        </td>
+                        <td className="px-4 py-3 max-w-[180px]">
                           <p className="truncate text-sm text-foreground font-medium">
                             {o.marketQuestion || o.conditionId.slice(0, 16) + "…"}
                           </p>
                         </td>
-                        <td className="px-5 py-4">
+                        <td className="px-4 py-3">
                           <span className={cn(
                             "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold",
                             o.outcome === "Yes" ? "bg-yes/15 text-yes" : "bg-no/15 text-no"
                           )}>{o.outcome}</span>
                         </td>
-                        <td className="px-5 py-4 text-sm capitalize text-muted-foreground">{o.side}</td>
-                        <td className="px-5 py-4 text-right text-sm font-semibold font-mono text-foreground">{fmtAmt(o.amount)}</td>
-                        <td className="px-5 py-4">
+                        <td className="px-4 py-3 text-sm capitalize text-muted-foreground">{o.side}</td>
+                        <td className="px-4 py-3 text-right text-sm font-semibold font-mono text-foreground">{fmtAmt(o.amount)}</td>
+                        <td className="px-4 py-3">
                           <span className={cn(
                             "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold capitalize",
                             STATUS_STYLE[o.status] ?? "bg-secondary text-muted-foreground"
                           )}>{o.status}</span>
                         </td>
-                        <td className="px-5 py-4 text-sm text-muted-foreground whitespace-nowrap">{fmt(o.createdAt)}</td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">{fmt(o.createdAt)}</td>
                       </tr>
                     );
                   })}

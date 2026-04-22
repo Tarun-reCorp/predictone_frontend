@@ -36,7 +36,7 @@ export default function MerchantDashboardPage() {
   if (!user) return null;
 
   return (
-    <div className="flex flex-col gap-6 max-w-4xl">
+    <div className="flex flex-col gap-6">
 
       {/* ── Welcome banner ── */}
       <div className="rounded-2xl border border-border bg-card p-6 flex items-start gap-4">

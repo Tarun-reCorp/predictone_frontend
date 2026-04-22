@@ -1,12 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   ArrowUpCircle, Clock, CheckCircle2, XCircle,
   ChevronLeft, ChevronRight, Loader2, Filter,
+  CalendarClock, ListChecks,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
+import { TABLE } from "@/lib/table-styles";
+import { SummaryCards, type SummaryCardItem } from "@/components/summary-cards";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -24,6 +27,14 @@ interface FundRequest {
   createdAt: string;
 }
 
+interface Summary {
+  approved: number;
+  pending: number;
+  rejected: number;
+  today: number;
+  total: number;
+}
+
 const STATUS_STYLE = {
   pending:  { label: "Pending",  color: "text-chart-4", bg: "bg-chart-4/15", icon: Clock        },
   approved: { label: "Approved", color: "text-yes",     bg: "bg-yes/15",     icon: CheckCircle2 },
@@ -37,10 +48,10 @@ function fmt(iso: string) {
 export default function AdminFundRequestsPage() {
   const { token } = useAuth();
   const [requests, setRequests] = useState<FundRequest[]>([]);
+  const [summary, setSummary]   = useState<Summary>({ approved: 0, pending: 0, rejected: 0, today: 0, total: 0 });
   const [loading, setLoading]   = useState(true);
   const [page, setPage]         = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [total, setTotal]       = useState(0);
   const [filterStatus, setFilterStatus] = useState("");
 
   // Review modal
@@ -50,18 +61,26 @@ export default function AdminFundRequestsPage() {
   const [submitting, setSubmitting]   = useState(false);
   const [reviewError, setReviewError] = useState("");
 
-  const load = () => {
+  const load = useCallback(() => {
     if (!token) return;
     setLoading(true);
     const q = new URLSearchParams({ page: String(page), limit: "15" });
     if (filterStatus) q.set("status", filterStatus);
-    fetch(`${API}/api/admin/fund-requests?${q}`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
-      .then(d => { setRequests(d.data ?? []); setTotalPages(d.meta?.totalPages ?? 1); setTotal(d.meta?.total ?? 0); })
-      .catch(() => {}).finally(() => setLoading(false));
-  };
 
-  useEffect(load, [token, page, filterStatus]);
+    Promise.all([
+      fetch(`${API}/api/admin/fund-requests?${q}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+      fetch(`${API}/api/admin/fund-requests/summary`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+    ])
+      .then(([list, sum]) => {
+        setRequests(list.data ?? []);
+        setTotalPages(list.meta?.totalPages ?? 1);
+        if (sum?.data) setSummary(sum.data);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [token, page, filterStatus]);
+
+  useEffect(() => { load(); }, [load]);
 
   const handleReview = async () => {
     if (!reviewing) return;
@@ -80,33 +99,22 @@ export default function AdminFundRequestsPage() {
     } finally { setSubmitting(false); }
   };
 
-  const pendingCount = requests.filter(r => r.status === "pending").length;
+  const cards: SummaryCardItem[] = [
+    { label: "Total",    value: summary.total,    icon: ListChecks,    tone: "default" },
+    { label: "Approved", value: summary.approved, icon: CheckCircle2,  tone: "yes" },
+    { label: "Pending",  value: summary.pending,  icon: Clock,         tone: "warn" },
+    { label: "Today",    value: summary.today,    icon: CalendarClock, tone: "brand" },
+  ];
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-foreground">Fund Requests</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {total} total ·{" "}
-            {pendingCount > 0 && <span className="text-chart-4 font-semibold">{pendingCount} pending review</span>}
-          </p>
-        </div>
-        {/* Filter */}
-        <div className="flex items-center gap-2">
-          <Filter className="h-4 w-4 text-muted-foreground" />
-          <select
-            value={filterStatus}
-            onChange={e => { setFilterStatus(e.target.value); setPage(1); }}
-            className="rounded-lg border border-border bg-secondary text-sm text-foreground px-3 py-1.5 outline-none"
-          >
-            <option value="">All Status</option>
-            <option value="pending">Pending</option>
-            <option value="approved">Approved</option>
-            <option value="rejected">Rejected</option>
-          </select>
-        </div>
+      <div>
+        <h1 className="text-2xl font-bold text-foreground">Fund Requests</h1>
+        <p className="text-sm text-muted-foreground mt-0.5">Review merchant top-up requests and credit wallets.</p>
       </div>
+
+      {/* Summary */}
+      <SummaryCards items={cards} />
 
       {/* Review modal */}
       {reviewing && (
@@ -116,13 +124,12 @@ export default function AdminFundRequestsPage() {
               <h2 className="text-base font-bold text-foreground">Review Fund Request</h2>
             </div>
             <div className="p-6 flex flex-col gap-4">
-              {/* Request details */}
               <div className="rounded-lg border border-border bg-secondary/50 divide-y divide-border/50">
                 {[
-                  { label: "Merchant", value: reviewing.userId?.name },
-                  { label: "Amount",   value: `$${reviewing.amount.toFixed(2)} ${reviewing.currency}` },
+                  { label: "Merchant",  value: reviewing.userId?.name },
+                  { label: "Amount",    value: `$${reviewing.amount.toFixed(2)} ${reviewing.currency}` },
                   { label: "Reference", value: reviewing.paymentReference || "—" },
-                  { label: "Note",     value: reviewing.merchantNote || "—" },
+                  { label: "Note",      value: reviewing.merchantNote || "—" },
                 ].map(row => (
                   <div key={row.label} className="flex items-center justify-between px-4 py-2.5">
                     <span className="text-xs text-muted-foreground">{row.label}</span>
@@ -131,7 +138,6 @@ export default function AdminFundRequestsPage() {
                 ))}
               </div>
 
-              {/* Action toggle */}
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => setAction("approved")}
@@ -149,7 +155,6 @@ export default function AdminFundRequestsPage() {
                 </button>
               </div>
 
-              {/* Admin note */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-foreground">Admin Note (optional)</label>
                 <textarea
@@ -179,7 +184,23 @@ export default function AdminFundRequestsPage() {
       )}
 
       {/* Table */}
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <div className={TABLE.wrapper}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <p className="text-sm font-semibold text-foreground">Requests</p>
+          <div className="flex items-center gap-2">
+            <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+            <select
+              value={filterStatus}
+              onChange={e => { setFilterStatus(e.target.value); setPage(1); }}
+              className="rounded-md border border-border bg-secondary text-xs text-foreground px-2.5 py-1.5 outline-none"
+            >
+              <option value="">All status</option>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+            </select>
+          </div>
+        </div>
         {loading ? (
           <div className="flex justify-center py-16"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
         ) : requests.length === 0 ? (
@@ -189,45 +210,47 @@ export default function AdminFundRequestsPage() {
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className={TABLE.scroll}>
+              <table className={TABLE.table}>
                 <thead>
-                  <tr className="border-b border-border bg-secondary/30">
-                    {["Merchant", "Amount", "Reference", "Status", "Current Balance", "Submitted", "Action"].map(h => (
-                      <th key={h} className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
-                    ))}
+                  <tr className={TABLE.thead}>
+                    <th className={TABLE.th}>Merchant</th>
+                    <th className={TABLE.thRight}>Amount</th>
+                    <th className={TABLE.th}>UTR / Ref</th>
+                    <th className={TABLE.th}>Status</th>
+                    <th className={TABLE.thRight}>Balance</th>
+                    <th className={TABLE.th}>Submitted</th>
+                    <th className={TABLE.th}>Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border/60">
+                <tbody className={TABLE.tbody}>
                   {requests.map(req => {
                     const s = STATUS_STYLE[req.status];
                     return (
-                      <tr key={req._id} className="hover:bg-secondary/20 transition-colors">
-                        <td className="px-5 py-4">
-                          <p className="text-sm font-medium text-foreground">{req.userId?.name}</p>
+                      <tr key={req._id} className={TABLE.row}>
+                        <td className={TABLE.td}>
+                          <p className="font-medium text-foreground">{req.userId?.name}</p>
                           <p className="text-xs text-muted-foreground">{req.userId?.email}</p>
                         </td>
-                        <td className="px-5 py-4">
-                          <span className="text-sm font-bold font-mono text-foreground">${req.amount.toFixed(2)}</span>
+                        <td className={TABLE.tdRight}>
+                          <span className="font-mono font-bold">${req.amount.toFixed(2)}</span>
                           <span className="ml-1 text-xs text-muted-foreground">{req.currency}</span>
                         </td>
-                        <td className="px-5 py-4 max-w-[140px]">
-                          <p className="text-sm text-muted-foreground truncate">{req.paymentReference || "—"}</p>
+                        <td className={cn(TABLE.tdMuted, "max-w-[160px]")}>
+                          <p className="truncate">{req.paymentReference || "—"}</p>
                         </td>
-                        <td className="px-5 py-4">
+                        <td className={TABLE.td}>
                           <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold", s.color, s.bg)}>
                             <s.icon className="h-3 w-3" /> {s.label}
                           </span>
-                          {req.adminNote && <p className="text-xs text-muted-foreground mt-1 max-w-[120px] truncate">{req.adminNote}</p>}
+                          {req.adminNote && <p className="text-xs text-muted-foreground mt-1 max-w-[140px] truncate">{req.adminNote}</p>}
                         </td>
-                        <td className="px-5 py-4">
-                          <span className="font-mono text-sm text-yes">${(req.userId?.walletBalance ?? 0).toFixed(2)}</span>
-                        </td>
-                        <td className="px-5 py-4 text-sm text-muted-foreground whitespace-nowrap">{fmt(req.createdAt)}</td>
-                        <td className="px-5 py-4">
+                        <td className={cn(TABLE.tdRight, "font-mono text-yes")}>${(req.userId?.walletBalance ?? 0).toFixed(2)}</td>
+                        <td className={cn(TABLE.tdMuted, "whitespace-nowrap")}>{fmt(req.createdAt)}</td>
+                        <td className={TABLE.td}>
                           {req.status === "pending" ? (
                             <button onClick={() => { setReviewing(req); setAction("approved"); setAdminNote(""); setReviewError(""); }}
-                              className="flex items-center gap-1.5 rounded-lg bg-brand/10 text-brand hover:bg-brand/20 px-3 py-1.5 text-xs font-semibold transition-colors">
+                              className="flex items-center gap-1.5 rounded-md bg-brand/10 text-brand hover:bg-brand/20 px-3 py-1.5 text-xs font-semibold transition-colors">
                               Review
                             </button>
                           ) : (
@@ -243,16 +266,16 @@ export default function AdminFundRequestsPage() {
               </table>
             </div>
             {totalPages > 1 && (
-              <div className="flex items-center justify-between px-6 py-4 border-t border-border bg-secondary/10">
-                <span className="text-sm text-muted-foreground">Page <b>{page}</b> of <b>{totalPages}</b></span>
+              <div className={TABLE.footer}>
+                <span className="text-muted-foreground">Page <b>{page}</b> of <b>{totalPages}</b></span>
                 <div className="flex gap-2">
                   <button onClick={() => setPage(p => p - 1)} disabled={page <= 1}
-                    className="flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground disabled:opacity-40">
-                    <ChevronLeft className="h-4 w-4" /> Prev
+                    className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-muted-foreground hover:text-foreground disabled:opacity-40">
+                    <ChevronLeft className="h-3.5 w-3.5" /> Prev
                   </button>
                   <button onClick={() => setPage(p => p + 1)} disabled={page >= totalPages}
-                    className="flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground disabled:opacity-40">
-                    Next <ChevronRight className="h-4 w-4" />
+                    className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-muted-foreground hover:text-foreground disabled:opacity-40">
+                    Next <ChevronRight className="h-3.5 w-3.5" />
                   </button>
                 </div>
               </div>

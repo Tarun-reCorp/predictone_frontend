@@ -288,13 +288,13 @@ export default function TopupPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-secondary/30">
-                    <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Merchant</th>
-                    <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Type</th>
-                    <th className="px-5 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Amount</th>
-                    <th className="px-5 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Balance After</th>
-                    <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Description</th>
-                    <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">By</th>
-                    <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Date</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Merchant</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Type</th>
+                    <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Amount</th>
+                    <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Balance After</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Description</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">By</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Date</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
@@ -303,26 +303,26 @@ export default function TopupPage() {
                     const isCredit = rec.type === "credit";
                     return (
                       <tr key={rec._id} className="hover:bg-secondary/20 transition-colors">
-                        <td className="px-5 py-4">
+                        <td className="px-4 py-3">
                           <p className="text-sm font-medium text-foreground">{rec.merchantId?.name ?? "—"}</p>
                           <p className="text-xs text-muted-foreground">{rec.merchantId?.email ?? ""}</p>
                         </td>
-                        <td className="px-5 py-4">
+                        <td className="px-4 py-3">
                           <span className={cn("inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold", style.color, style.bg)}>
                             {style.label}
                           </span>
                         </td>
-                        <td className="px-5 py-4 text-right">
+                        <td className="px-4 py-3 text-right">
                           <span className={cn("font-mono font-semibold text-sm", isCredit ? "text-yes" : "text-no")}>
                             {isCredit ? "+" : "-"}${rec.amount.toFixed(2)}
                           </span>
                         </td>
-                        <td className="px-5 py-4 text-right font-mono text-sm text-foreground">${rec.balanceAfter.toFixed(2)}</td>
-                        <td className="px-5 py-4 max-w-[200px]">
+                        <td className="px-4 py-3 text-right font-mono text-sm text-foreground">${rec.balanceAfter.toFixed(2)}</td>
+                        <td className="px-4 py-3 max-w-[200px]">
                           <p className="text-sm text-muted-foreground truncate">{rec.description || "—"}</p>
                         </td>
-                        <td className="px-5 py-4 text-sm text-muted-foreground">{rec.performedBy?.name ?? "—"}</td>
-                        <td className="px-5 py-4 text-sm text-muted-foreground whitespace-nowrap">{fmtDate(rec.createdAt)}</td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground">{rec.performedBy?.name ?? "—"}</td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">{fmtDate(rec.createdAt)}</td>
                       </tr>
                     );
                   })}

@@ -268,7 +268,7 @@ export default function MerchantWalletPage() {
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col gap-6 max-w-4xl">
+    <div className="flex flex-col gap-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -675,11 +675,11 @@ export default function MerchantWalletPage() {
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-secondary/30">
                     {["Type", "Amount", "Balance After", "Description", "Date"].map(h => (
-                      <th key={h} className={cn("px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground", h === "Amount" || h === "Balance After" ? "text-right" : "")}>{h}</th>
+                      <th key={h} className={cn("px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground", h === "Amount" || h === "Balance After" ? "text-right" : "")}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -689,7 +689,7 @@ export default function MerchantWalletPage() {
                     const isCredit = tx.amount > 0;
                     return (
                       <tr key={tx._id} className="hover:bg-secondary/20 transition-colors">
-                        <td className="px-5 py-4">
+                        <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <div className={cn("flex h-7 w-7 items-center justify-center rounded-lg shrink-0", meta.bg)}>
                               <meta.icon className={cn("h-3.5 w-3.5", meta.color)} />
@@ -697,18 +697,18 @@ export default function MerchantWalletPage() {
                             <span className={cn("text-sm font-medium", meta.color)}>{meta.label}</span>
                           </div>
                         </td>
-                        <td className="px-5 py-4 text-right">
+                        <td className="px-4 py-3 text-right">
                           <span className={cn("text-sm font-bold font-mono", isCredit ? "text-yes" : "text-no")}>
                             {isCredit ? "+" : ""}${Math.abs(tx.amount).toFixed(2)}
                           </span>
                         </td>
-                        <td className="px-5 py-4 text-right">
+                        <td className="px-4 py-3 text-right">
                           <span className="text-sm font-mono text-foreground">${tx.balanceAfter.toFixed(2)}</span>
                         </td>
-                        <td className="px-5 py-4 max-w-xs">
+                        <td className="px-4 py-3 max-w-xs">
                           <p className="text-sm text-muted-foreground truncate">{tx.description || "—"}</p>
                         </td>
-                        <td className="px-5 py-4 text-sm text-muted-foreground whitespace-nowrap">{fmt(tx.createdAt)}</td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">{fmt(tx.createdAt)}</td>
                       </tr>
                     );
                   })}

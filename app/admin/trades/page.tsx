@@ -241,7 +241,7 @@ export default function AdminTrades() {
             <thead>
               <tr className="border-b border-border/60 bg-secondary/20">
                 {["Time", "Market", "Outcome", "Side", "Price", "Size", "Total"].map((h) => (
-                  <th key={h} className="px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
+                  <th key={h} className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -254,16 +254,16 @@ export default function AdminTrades() {
                     i === 0 && live ? "bg-brand/5" : "hover:bg-secondary/10"
                   )}
                 >
-                  <td className="px-5 py-2.5 font-mono text-[10px] text-muted-foreground whitespace-nowrap">
+                  <td className="px-4 py-3 font-mono text-[10px] text-muted-foreground whitespace-nowrap">
                     {new Date(t.ts).toLocaleTimeString()}
                   </td>
-                  <td className="px-5 py-2.5 max-w-[200px]">
+                  <td className="px-4 py-3 max-w-[200px]">
                     <p className="text-xs text-foreground truncate">{t.market}</p>
                   </td>
-                  <td className="px-5 py-2.5">
+                  <td className="px-4 py-3">
                     <span className={cn("text-xs font-semibold", t.outcome === "Yes" ? "text-yes" : "text-no")}>{t.outcome}</span>
                   </td>
-                  <td className="px-5 py-2.5">
+                  <td className="px-4 py-3">
                     <span className={cn(
                       "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold",
                       t.side === "BUY" ? "bg-yes/15 text-yes" : "bg-no/15 text-no"
@@ -271,9 +271,9 @@ export default function AdminTrades() {
                       {t.side}
                     </span>
                   </td>
-                  <td className="px-5 py-2.5 font-mono text-xs text-foreground">${t.price.toFixed(2)}</td>
-                  <td className="px-5 py-2.5 font-mono text-xs text-foreground">{t.size}</td>
-                  <td className="px-5 py-2.5 font-mono text-xs font-semibold text-foreground">${t.total.toFixed(2)}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-foreground">${t.price.toFixed(2)}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-foreground">{t.size}</td>
+                  <td className="px-4 py-3 font-mono text-xs font-semibold text-foreground">${t.total.toFixed(2)}</td>
                 </tr>
               ))}
             </tbody>

@@ -9,10 +9,8 @@ import {
   parseOutcomePrices,
   formatVolume,
   clientFetchMarketById,
-  clientFetchPriceHistory,
   clientFetchMarkets,
   type PolyMarket,
-  type PriceHistory,
 } from "@/lib/polymarket";
 import { FeaturedMarket } from "@/components/featured-market";
 import { MarketCard } from "@/components/market-card";
@@ -24,7 +22,6 @@ import { AuthModal } from "@/components/auth-modal";
 export default function MarketPage() {
   const { id } = useParams<{ id: string }>();
   const [market, setMarket] = useState<PolyMarket | null>(null);
-  const [priceHistory, setPriceHistory] = useState<PriceHistory[]>([]);
   const [related, setRelated] = useState<PolyMarket[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFoundState, setNotFoundState] = useState(false);
@@ -60,12 +57,7 @@ export default function MarketPage() {
         else if (buyParam === "no") { setBuyOutcome("No"); setBuyModalOpen(true); }
       }
 
-      const [history, allMarkets] = await Promise.all([
-        m.conditionId ? clientFetchPriceHistory(m.conditionId, "1w") : Promise.resolve([]),
-        clientFetchMarkets({ limit: 10, active: true, order: "volume", ascending: false }),
-      ]);
-
-      setPriceHistory(history);
+      const allMarkets = await clientFetchMarkets({ limit: 10, active: true, order: "volume", ascending: false });
       setRelated(allMarkets.filter((x) => x.conditionId !== m.conditionId).slice(0, 4));
       setLoading(false);
     });
@@ -131,7 +123,7 @@ export default function MarketPage() {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
           {/* Main content */}
           <div className="lg:col-span-3 space-y-6">
-            <FeaturedMarket market={market} priceHistory={priceHistory} onBuy={openBuy} />
+            <FeaturedMarket market={market} onBuy={openBuy} />
 
             {/* Stats row */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
