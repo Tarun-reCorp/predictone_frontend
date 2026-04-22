@@ -28,11 +28,6 @@ export function FeaturedMarket({ market, onBuy }: FeaturedMarketProps) {
   const vol       = market.volumeNum ?? market.volume ?? 0;
   const hasVolume = vol > 0;
 
-  const estimatedPayout =
-    parseFloat(quantity) > 0
-      ? (parseFloat(quantity) / (tradeType === "yes" ? yesPrice : 1 - yesPrice)).toFixed(2)
-      : "0.00";
-
   return (
     <div className="rounded-xl border border-border bg-card overflow-hidden">
       {/* Header */}
@@ -132,22 +127,6 @@ export function FeaturedMarket({ market, onBuy }: FeaturedMarketProps) {
                 ${amt}
               </button>
             ))}
-          </div>
-
-          {/* Payout estimate */}
-          <div className="rounded-lg bg-secondary/50 p-3 space-y-1.5 border border-border/50">
-            <div className="flex justify-between text-xs">
-              <span className="text-muted-foreground">Avg price</span>
-              <span className="font-mono text-foreground">
-                {hasVolume
-                  ? (tradeType === "yes" ? `$${(yesPct / 100).toFixed(2)}` : `$${((100 - yesPct) / 100).toFixed(2)}`)
-                  : "$0.50"}
-              </span>
-            </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-muted-foreground">Potential payout</span>
-              <span className="font-mono font-semibold text-yes">${estimatedPayout}</span>
-            </div>
           </div>
 
           {/* Buy button */}

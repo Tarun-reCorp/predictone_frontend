@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import {
   Search, SlidersHorizontal, TrendingUp, ChevronDown, X,
-  FlaskConical, Activity, Shield, LogOut, User, ChevronUp,
+  FlaskConical, Activity, Shield, LogOut, User, ChevronUp, Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -41,7 +41,18 @@ export function Header({ activeCategory = "", onCategoryChange, onSearch }: Head
   const userMenuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const pathname = usePathname();
-  const { user, loading, logout } = useAuth();
+  const { user, token, loading, logout } = useAuth();
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+
+  const BACKEND = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+
+  useEffect(() => {
+    if (user?.role !== "merchant" || !token) { setWalletBalance(null); return; }
+    fetch(`${BACKEND}/api/merchant/wallet`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => setWalletBalance(d.data?.balance ?? 0))
+      .catch(() => {});
+  }, [user, token, BACKEND]);
 
   const isSimulate = pathname === "/simulate";
   const isEconomics = pathname === "/economics";
@@ -88,7 +99,6 @@ export function Header({ activeCategory = "", onCategoryChange, onSearch }: Head
   };
 
   const openLogin = () => setAuthModal({ open: true, tab: "login" });
-  const openSignup = () => setAuthModal({ open: true, tab: "signup" });
   const closeAuth = () => setAuthModal((s) => ({ ...s, open: false }));
 
   // Initials avatar
@@ -153,6 +163,20 @@ export function Header({ activeCategory = "", onCategoryChange, onSearch }: Head
               </button>
             </div>
           </form>
+
+          {/* Merchant wallet balance pill */}
+          {user?.role === "merchant" && walletBalance !== null && (
+            <Link
+              href="/merchant/wallet"
+              className="flex shrink-0 items-center gap-2 rounded-lg border border-yes/30 bg-yes/10 px-3 py-1.5 hover:bg-yes/15 transition-colors"
+            >
+              <Wallet className="h-3.5 w-3.5 text-yes shrink-0" />
+              <div className="leading-tight">
+                <p className="text-[9px] font-medium text-muted-foreground uppercase tracking-wider leading-none">Balance</p>
+                <p className="text-xs font-bold font-mono text-yes leading-tight">${walletBalance.toFixed(2)}</p>
+              </div>
+            </Link>
+          )}
 
           {/* Right actions */}
           <div className="flex shrink-0 items-center gap-2">
@@ -281,27 +305,10 @@ export function Header({ activeCategory = "", onCategoryChange, onSearch }: Head
                   <>
                     <Button
                       size="sm"
-                      variant="outline"
                       onClick={openLogin}
-                      className="hidden sm:flex border-border text-muted-foreground hover:text-foreground font-semibold"
+                      className="bg-brand hover:bg-brand/90 text-primary-foreground font-semibold"
                     >
                       Log In
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={openSignup}
-                      className="hidden sm:flex bg-brand hover:bg-brand/90 text-primary-foreground font-semibold"
-                    >
-                      Sign Up
-                    </Button>
-                    {/* Mobile: single icon button */}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={openLogin}
-                      className="sm:hidden border-border text-foreground"
-                    >
-                      <User className="h-4 w-4" />
                     </Button>
                   </>
                 )}

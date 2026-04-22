@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   ArrowUpCircle, Clock, CheckCircle2, XCircle,
   ChevronLeft, ChevronRight, Loader2, Filter,
-  CalendarClock, ListChecks,
+  CalendarClock, ListChecks, QrCode, CreditCard, Bitcoin, FileText,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
@@ -18,6 +18,8 @@ interface FundRequest {
   userId: { _id: string; name: string; email: string; walletBalance: number };
   amount: number;
   currency: string;
+  orderId?: string;
+  paymentMethod?: "upi" | "card" | "crypto" | "manual";
   paymentReference?: string;
   merchantNote?: string;
   status: "pending" | "approved" | "rejected";
@@ -39,6 +41,13 @@ const STATUS_STYLE = {
   pending:  { label: "Pending",  color: "text-chart-4", bg: "bg-chart-4/15", icon: Clock        },
   approved: { label: "Approved", color: "text-yes",     bg: "bg-yes/15",     icon: CheckCircle2 },
   rejected: { label: "Rejected", color: "text-no",      bg: "bg-no/15",      icon: XCircle      },
+};
+
+const PM_STYLE = {
+  upi:    { label: "UPI",    icon: QrCode,     color: "text-chart-4",          bg: "bg-chart-4/15" },
+  card:   { label: "Card",   icon: CreditCard, color: "text-brand",            bg: "bg-brand/15"   },
+  crypto: { label: "Crypto", icon: Bitcoin,    color: "text-yes",              bg: "bg-yes/15"     },
+  manual: { label: "Manual", icon: FileText,   color: "text-muted-foreground", bg: "bg-secondary"  },
 };
 
 function fmt(iso: string) {
@@ -128,14 +137,26 @@ export default function AdminFundRequestsPage() {
                 {[
                   { label: "Merchant",  value: reviewing.userId?.name },
                   { label: "Amount",    value: `$${reviewing.amount.toFixed(2)} ${reviewing.currency}` },
+                  { label: "Order ID",  value: reviewing.orderId || "—" },
                   { label: "Reference", value: reviewing.paymentReference || "—" },
                   { label: "Note",      value: reviewing.merchantNote || "—" },
                 ].map(row => (
                   <div key={row.label} className="flex items-center justify-between px-4 py-2.5">
                     <span className="text-xs text-muted-foreground">{row.label}</span>
-                    <span className="text-xs font-medium text-foreground">{row.value}</span>
+                    <span className="text-xs font-medium text-foreground font-mono">{row.value}</span>
                   </div>
                 ))}
+                <div className="flex items-center justify-between px-4 py-2.5">
+                  <span className="text-xs text-muted-foreground">Method</span>
+                  {(() => {
+                    const pm = PM_STYLE[reviewing.paymentMethod ?? "manual"];
+                    return (
+                      <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold", pm.color, pm.bg)}>
+                        <pm.icon className="h-3 w-3" /> {pm.label}
+                      </span>
+                    );
+                  })()}
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
@@ -216,6 +237,8 @@ export default function AdminFundRequestsPage() {
                   <tr className={TABLE.thead}>
                     <th className={TABLE.th}>Merchant</th>
                     <th className={TABLE.thRight}>Amount</th>
+                    <th className={TABLE.th}>Method</th>
+                    <th className={TABLE.th}>Order ID</th>
                     <th className={TABLE.th}>UTR / Ref</th>
                     <th className={TABLE.th}>Status</th>
                     <th className={TABLE.thRight}>Balance</th>
@@ -235,6 +258,19 @@ export default function AdminFundRequestsPage() {
                         <td className={TABLE.tdRight}>
                           <span className="font-mono font-bold">${req.amount.toFixed(2)}</span>
                           <span className="ml-1 text-xs text-muted-foreground">{req.currency}</span>
+                        </td>
+                        <td className={TABLE.td}>
+                          {(() => {
+                            const pm = PM_STYLE[req.paymentMethod ?? "manual"];
+                            return (
+                              <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold", pm.color, pm.bg)}>
+                                <pm.icon className="h-3 w-3" /> {pm.label}
+                              </span>
+                            );
+                          })()}
+                        </td>
+                        <td className={cn(TABLE.tdMuted, "max-w-[140px]")}>
+                          <p className="truncate font-mono text-xs">{req.orderId || "—"}</p>
                         </td>
                         <td className={cn(TABLE.tdMuted, "max-w-[160px]")}>
                           <p className="truncate">{req.paymentReference || "—"}</p>

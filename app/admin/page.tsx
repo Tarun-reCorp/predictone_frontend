@@ -1,15 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
 import {
-  TrendingUp, TrendingDown, Users, Activity, Droplets,
-  ArrowUpRight, ArrowDownRight, RefreshCw, Clock,
+  Users, Activity, RefreshCw, Clock,
   ShoppingBag, ArrowUpDown, ChevronLeft, ChevronRight,
   Hash, DollarSign, CheckCheck, Timer, Receipt, XCircle,
-  CheckCircle2, AlertCircle,
+  CheckCircle2, AlertCircle, TrendingUp, Wallet, FileCheck,
+  BarChart2,
 } from "lucide-react";
-import { clientFetchMarkets, formatVolume, type PolyMarket } from "@/lib/polymarket";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
 import { useWalletContext } from "@/contexts/wallet-context";
@@ -17,6 +16,16 @@ import { useWalletContext } from "@/contexts/wallet-context";
 const BACKEND = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
+
+interface DashboardData {
+  merchants:   { total: number; active: number; blocked: number };
+  orders:      { total: number; pending: number };
+  volume:      { total: number };
+  markets:     { total: number; active: number; resolved: number; cancelled: number };
+  fundRequests:{ total: number; approved: number; pending: number; rejected: number; today: number };
+  pendingFundRequests: number;
+  topMerchants: { _id: string; name?: string; email?: string; totalVolume: number; orderCount: number }[];
+}
 
 interface AdminOrder {
   _id: string;
@@ -66,6 +75,11 @@ function fmtDate(iso: string) {
   });
 }
 function fmtAmount(n: number) { return `$${n.toFixed(2)}`; }
+function fmtVolume(n: number) {
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000)     return `$${(n / 1_000).toFixed(1)}K`;
+  return `$${n.toFixed(2)}`;
+}
 
 // ── Shared sub-components ──────────────────────────────────────────────────────
 
@@ -112,73 +126,24 @@ function Pagination({
 }
 
 function StatCard({
-  label, value, sub, change, changeUp, icon: Icon, accent
+  label, value, sub, icon: Icon, accent, iconBg,
 }: {
-  label: string; value: string; sub?: string; change?: string;
-  changeUp?: boolean; icon: React.ElementType; accent?: string;
+  label: string; value: string; sub?: string;
+  icon: React.ElementType; accent?: string; iconBg?: string;
 }) {
   return (
     <div className="rounded-xl border border-border bg-card p-5 flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{label}</span>
-        <div className={cn("flex h-8 w-8 items-center justify-center rounded-lg", accent ?? "bg-brand/15")}>
-          <Icon className={cn("h-4 w-4", accent ? "text-white" : "text-brand")} />
+        <div className={cn("flex h-8 w-8 items-center justify-center rounded-lg", iconBg ?? "bg-brand/15")}>
+          <Icon className={cn("h-4 w-4", accent ?? "text-brand")} />
         </div>
       </div>
       <div>
         <p className="text-3xl font-bold font-mono text-foreground tracking-tight">{value}</p>
         {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
       </div>
-      {change && (
-        <div className={cn("flex items-center gap-1 text-xs font-semibold", changeUp ? "text-yes" : "text-no")}>
-          {changeUp ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
-          {change}
-        </div>
-      )}
     </div>
-  );
-}
-
-function MiniChart({ data, color }: { data: { v: number }[]; color: string }) {
-  return (
-    <ResponsiveContainer width="100%" height={48}>
-      <AreaChart data={data} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
-        <defs>
-          <linearGradient id={`grad-${color}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor={color} stopOpacity={0.3} />
-            <stop offset="95%" stopColor={color} stopOpacity={0} />
-          </linearGradient>
-        </defs>
-        <Area type="monotone" dataKey="v" stroke={color} fill={`url(#grad-${color})`} strokeWidth={1.5} dot={false} />
-      </AreaChart>
-    </ResponsiveContainer>
-  );
-}
-
-function genSeries(base: number, len = 24, vol = 0.08) {
-  const arr = [];
-  let v = base;
-  for (let i = 0; i < len; i++) {
-    v = v * (1 + (Math.random() - 0.48) * vol);
-    arr.push({ v: Math.max(0, v) });
-  }
-  return arr;
-}
-
-function VolumeBar({ data }: { data: { name: string; v: number }[] }) {
-  return (
-    <ResponsiveContainer width="100%" height={120}>
-      <BarChart data={data} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
-        <XAxis dataKey="name" tick={{ fill: "oklch(0.55 0.01 240)", fontSize: 10 }} axisLine={false} tickLine={false} />
-        <YAxis hide />
-        <Tooltip
-          contentStyle={{ background: "oklch(0.16 0.006 240)", border: "1px solid oklch(0.22 0.008 240)", borderRadius: 8, fontSize: 11 }}
-          labelStyle={{ color: "oklch(0.95 0.005 240)" }}
-          formatter={(v: number) => [formatVolume(v), "Volume"]}
-        />
-        <Bar dataKey="v" fill="oklch(0.6 0.2 250)" radius={[3, 3, 0, 0]} />
-      </BarChart>
-    </ResponsiveContainer>
   );
 }
 
@@ -396,11 +361,11 @@ function AdminTransactionsSection({
 
 export default function AdminOverview() {
   const { token } = useAuth();
-  const { isConnected, address: walletAddress, chainId } = useWalletContext();
+  const { isConnected, address: walletAddress } = useWalletContext();
 
-  const [markets, setMarkets]         = useState<PolyMarket[]>([]);
-  const [loading, setLoading]         = useState(true);
-  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [dashboard, setDashboard]         = useState<DashboardData | null>(null);
+  const [dashLoading, setDashLoading]     = useState(true);
+  const [lastRefresh, setLastRefresh]     = useState<Date | null>(null);
 
   // Orders
   const [adminOrders, setAdminOrders]           = useState<AdminOrder[]>([]);
@@ -416,15 +381,24 @@ export default function AdminOverview() {
   const [txnsTotalPages, setTxnsTotalPages]     = useState(1);
   const [txnsTotal, setTxnsTotal]               = useState(0);
 
-  const loadMarkets = async () => {
-    setLoading(true);
-    const data = await clientFetchMarkets({ limit: 40, active: true, order: "volume", ascending: false });
-    setMarkets(data);
-    setLastRefresh(new Date());
-    setLoading(false);
+  const loadDashboard = async () => {
+    if (!token) return;
+    setDashLoading(true);
+    try {
+      const res = await fetch(`${BACKEND}/api/admin/dashboard`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      setDashboard(data.data ?? data);
+      setLastRefresh(new Date());
+    } catch {
+      // keep previous data
+    } finally {
+      setDashLoading(false);
+    }
   };
 
-  useEffect(() => { loadMarkets(); }, []);
+  useEffect(() => { loadDashboard(); }, [token]);
 
   useEffect(() => {
     if (!token) return;
@@ -434,12 +408,9 @@ export default function AdminOverview() {
     })
       .then((r) => r.json())
       .then((data) => {
-        const list       = data.data ?? data.docs ?? [];
-        const totalPages = data.meta?.totalPages ?? data.totalPages ?? 1;
-        const total      = data.meta?.total ?? data.total ?? list.length;
-        setAdminOrders(list);
-        setOrdersTotalPages(totalPages);
-        setOrdersTotal(total);
+        setAdminOrders(data.data ?? data.docs ?? []);
+        setOrdersTotalPages(data.meta?.totalPages ?? data.totalPages ?? 1);
+        setOrdersTotal(data.meta?.total ?? data.total ?? 0);
       })
       .catch(() => setAdminOrders([]))
       .finally(() => setOrdersLoading(false));
@@ -453,33 +424,29 @@ export default function AdminOverview() {
     })
       .then((r) => r.json())
       .then((data) => {
-        const list       = data.data ?? data.docs ?? [];
-        const totalPages = data.meta?.totalPages ?? data.totalPages ?? 1;
-        const total      = data.meta?.total ?? data.total ?? list.length;
-        setAdminTxns(list);
-        setTxnsTotalPages(totalPages);
-        setTxnsTotal(total);
+        setAdminTxns(data.data ?? data.docs ?? []);
+        setTxnsTotalPages(data.meta?.totalPages ?? data.totalPages ?? 1);
+        setTxnsTotal(data.meta?.total ?? data.total ?? 0);
       })
       .catch(() => setAdminTxns([]))
       .finally(() => setTxnsLoading(false));
   }, [token, txnsPage]);
 
-  const totalVolume    = markets.reduce((s, m) => s + (m.volumeNum ?? m.volume ?? 0), 0);
-  const totalLiquidity = markets.reduce((s, m) => s + (m.liquidityNum ?? m.liquidity ?? 0), 0);
-  const activeCount    = markets.filter((m) => m.active && !m.closed).length;
-  const closedCount    = markets.filter((m) => m.closed).length;
+  const d = dashboard;
 
-  const weeklyVolData = [
-    { name: "Mon", v: totalVolume * 0.11 },
-    { name: "Tue", v: totalVolume * 0.14 },
-    { name: "Wed", v: totalVolume * 0.13 },
-    { name: "Thu", v: totalVolume * 0.18 },
-    { name: "Fri", v: totalVolume * 0.16 },
-    { name: "Sat", v: totalVolume * 0.12 },
-    { name: "Sun", v: totalVolume * 0.16 },
-  ];
+  // Bar chart data for market status
+  const marketBarData = d ? [
+    { name: "Active",    v: d.markets.active },
+    { name: "Resolved",  v: d.markets.resolved },
+    { name: "Cancelled", v: d.markets.cancelled },
+  ] : [];
 
-  const topByVolume = markets.slice(0, 8);
+  // Bar chart data for fund requests
+  const frBarData = d ? [
+    { name: "Approved", v: d.fundRequests.approved },
+    { name: "Pending",  v: d.fundRequests.pending },
+    { name: "Rejected", v: d.fundRequests.rejected },
+  ] : [];
 
   return (
     <div className="space-y-6">
@@ -488,7 +455,7 @@ export default function AdminOverview() {
         <div>
           <h1 className="text-2xl font-bold text-foreground tracking-tight">Overview</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {markets.length} markets loaded from database
+            Platform statistics and activity
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -499,11 +466,11 @@ export default function AdminOverview() {
             </div>
           )}
           <button
-            onClick={loadMarkets}
-            disabled={loading}
+            onClick={loadDashboard}
+            disabled={dashLoading}
             className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-50"
           >
-            <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+            <RefreshCw className={cn("h-3.5 w-3.5", dashLoading && "animate-spin")} />
             Refresh
           </button>
         </div>
@@ -552,130 +519,178 @@ export default function AdminOverview() {
       </div>
 
       {/* ── Stat cards ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Total Volume"   value={formatVolume(totalVolume)}   sub="All active markets" change="+12.4% vs last week" changeUp icon={TrendingUp} />
-        <StatCard label="Liquidity"      value={formatVolume(totalLiquidity)} sub="Open interest"     change="+5.2% vs last week"  changeUp icon={Droplets} />
-        <StatCard label="Active Markets" value={String(activeCount)} sub={`${closedCount} resolved`}  change="+3 new today"        changeUp icon={Activity} />
-        <StatCard label="Traders"        value="—"                   sub="Requires auth"                                                    icon={Users} />
-      </div>
-
-      {/* ── Charts row ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <p className="text-sm font-semibold text-foreground">Weekly Volume Distribution</p>
-              <p className="text-xs text-muted-foreground">Estimated from live market data</p>
-            </div>
-            <span className="text-xs font-mono text-brand font-bold">{formatVolume(totalVolume)}</span>
-          </div>
-          {loading ? (
-            <div className="h-28 animate-pulse rounded-lg bg-secondary" />
-          ) : (
-            <VolumeBar data={weeklyVolData} />
-          )}
+      {dashLoading ? (
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="rounded-xl border border-border bg-card p-5 h-28 animate-pulse" />
+          ))}
         </div>
+      ) : (
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+          <StatCard label="Total Merchants"  value={String(d?.merchants.total ?? 0)}
+            sub={`${d?.merchants.blocked ?? 0} blocked`}
+            icon={Users}      accent="text-brand"    iconBg="bg-brand/15" />
+          <StatCard label="Active Merchants" value={String(d?.merchants.active ?? 0)}
+            sub="Currently active"
+            icon={Activity}   accent="text-yes"      iconBg="bg-yes/15" />
+          <StatCard label="Total Orders"     value={String(d?.orders.total ?? 0)}
+            sub={`${d?.orders.pending ?? 0} pending`}
+            icon={ShoppingBag} accent="text-chart-4" iconBg="bg-chart-4/15" />
+          <StatCard label="Total Volume"     value={fmtVolume(d?.volume.total ?? 0)}
+            sub="All-time order volume"
+            icon={TrendingUp}  accent="text-brand"   iconBg="bg-brand/15" />
+          <StatCard label="Total Markets"    value={String(d?.markets.total ?? 0)}
+            sub={`${d?.markets.active ?? 0} active`}
+            icon={BarChart2}   accent="text-chart-4" iconBg="bg-chart-4/15" />
+          <StatCard label="Pending Fund Reqs" value={String(d?.fundRequests.pending ?? 0)}
+            sub={`${d?.fundRequests.today ?? 0} submitted today`}
+            icon={Wallet}      accent="text-no"      iconBg="bg-no/15" />
+        </div>
+      )}
 
-        <div className="rounded-xl border border-border bg-card p-5">
-          <p className="text-sm font-semibold text-foreground mb-4">Market Status</p>
-          <div className="space-y-3">
-            {[
-              { label: "Active",           count: activeCount,                              color: "bg-yes",     pct: markets.length ? (activeCount / markets.length) * 100 : 0 },
-              { label: "Closed / Resolved",count: closedCount,                              color: "bg-no",      pct: markets.length ? (closedCount / markets.length) * 100 : 0 },
-              { label: "Featured",         count: markets.filter((m) => m.featured).length, color: "bg-brand",   pct: markets.length ? (markets.filter((m) => m.featured).length / markets.length) * 100 : 0 },
-              { label: "New",              count: markets.filter((m) => m.new).length,      color: "bg-chart-4", pct: markets.length ? (markets.filter((m) => m.new).length / markets.length) * 100 : 0 },
-            ].map((row) => (
-              <div key={row.label}>
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="text-muted-foreground">{row.label}</span>
-                  <span className="font-mono font-semibold text-foreground">{row.count}</span>
-                </div>
-                <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
-                  <div className={cn("h-full rounded-full transition-all", row.color)} style={{ width: `${row.pct}%` }} />
-                </div>
+      {/* ── Market Status + Fund Request charts ── */}
+      {!dashLoading && d && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Market Status */}
+          <div className="rounded-xl border border-border bg-card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Market Status</p>
+                <p className="text-xs text-muted-foreground">{d.markets.total} total markets in DB</p>
               </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* ── Sparklines ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: "Volume Trend (24h)", color: "oklch(0.6 0.2 250)",  val: formatVolume(totalVolume * 0.04) },
-          { label: "New Markets",        color: "oklch(0.65 0.18 145)", val: String(markets.filter((m) => m.new).length) },
-          { label: "Avg Liquidity",      color: "oklch(0.75 0.15 60)",  val: markets.length ? formatVolume(totalLiquidity / markets.length) : "$0" },
-          { label: "Featured Markets",   color: "oklch(0.7 0.18 300)",  val: String(markets.filter((m) => m.featured).length) },
-        ].map((s) => (
-          <div key={s.label} className="rounded-xl border border-border bg-card p-4">
-            <div className="flex justify-between items-center mb-2">
-              <p className="text-xs text-muted-foreground font-medium">{s.label}</p>
-              <p className="text-sm font-bold font-mono text-foreground">{s.val}</p>
+              <a href="/admin/markets" className="text-xs text-brand hover:underline">View all</a>
             </div>
-            <MiniChart data={genSeries(50)} color={s.color} />
+            <div className="space-y-3 mb-4">
+              {[
+                { label: "Active",    count: d.markets.active,    color: "bg-yes",     pct: d.markets.total ? (d.markets.active / d.markets.total) * 100 : 0 },
+                { label: "Resolved",  count: d.markets.resolved,  color: "bg-brand",   pct: d.markets.total ? (d.markets.resolved / d.markets.total) * 100 : 0 },
+                { label: "Cancelled", count: d.markets.cancelled, color: "bg-no",      pct: d.markets.total ? (d.markets.cancelled / d.markets.total) * 100 : 0 },
+              ].map((row) => (
+                <div key={row.label}>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-muted-foreground">{row.label}</span>
+                    <span className="font-mono font-semibold text-foreground">{row.count}</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
+                    <div className={cn("h-full rounded-full transition-all", row.color)} style={{ width: `${Math.min(row.pct, 100)}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <ResponsiveContainer width="100%" height={90}>
+              <BarChart data={marketBarData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+                <XAxis dataKey="name" tick={{ fill: "oklch(0.55 0.01 240)", fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis hide />
+                <Tooltip
+                  contentStyle={{ background: "oklch(0.16 0.006 240)", border: "1px solid oklch(0.22 0.008 240)", borderRadius: 8, fontSize: 11 }}
+                  formatter={(v: number) => [v, "Markets"]}
+                />
+                <Bar dataKey="v" fill="oklch(0.6 0.2 250)" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
-        ))}
-      </div>
 
-      {/* ── Top markets table ── */}
-      <div className="rounded-xl border border-border bg-card">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <p className="text-sm font-semibold text-foreground">Top Markets by Volume</p>
-          <a href="/admin/markets" className="text-xs text-brand hover:underline">View all</a>
+          {/* Fund Requests Summary */}
+          <div className="rounded-xl border border-border bg-card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Fund Requests</p>
+                <p className="text-xs text-muted-foreground">{d.fundRequests.total} total requests</p>
+              </div>
+              <a href="/admin/fund-requests" className="text-xs text-brand hover:underline">View all</a>
+            </div>
+            <div className="space-y-3 mb-4">
+              {[
+                { label: "Approved", count: d.fundRequests.approved, color: "bg-yes",     pct: d.fundRequests.total ? (d.fundRequests.approved / d.fundRequests.total) * 100 : 0 },
+                { label: "Pending",  count: d.fundRequests.pending,  color: "bg-chart-4", pct: d.fundRequests.total ? (d.fundRequests.pending / d.fundRequests.total) * 100 : 0 },
+                { label: "Rejected", count: d.fundRequests.rejected, color: "bg-no",      pct: d.fundRequests.total ? (d.fundRequests.rejected / d.fundRequests.total) * 100 : 0 },
+              ].map((row) => (
+                <div key={row.label}>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-muted-foreground">{row.label}</span>
+                    <span className="font-mono font-semibold text-foreground">{row.count}</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
+                    <div className={cn("h-full rounded-full transition-all", row.color)} style={{ width: `${Math.min(row.pct, 100)}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <ResponsiveContainer width="100%" height={90}>
+              <BarChart data={frBarData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+                <XAxis dataKey="name" tick={{ fill: "oklch(0.55 0.01 240)", fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis hide />
+                <Tooltip
+                  contentStyle={{ background: "oklch(0.16 0.006 240)", border: "1px solid oklch(0.22 0.008 240)", borderRadius: 8, fontSize: 11 }}
+                  formatter={(v: number) => [v, "Requests"]}
+                />
+                <Bar dataKey="v" fill="oklch(0.6 0.2 250)" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-secondary/30">
-                {["Market", "Volume", "Liquidity", "Yes %", "Status"].map((h) => (
-                  <th key={h} className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
+      )}
+
+      {/* ── Top Merchants by Volume ── */}
+      {!dashLoading && d && d.topMerchants.length > 0 && (
+        <div className="rounded-xl border border-border bg-card">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+            <div className="flex items-center gap-2">
+              <FileCheck className="h-4 w-4 text-brand" />
+              <p className="text-sm font-semibold text-foreground">Top Merchants by Volume</p>
+            </div>
+            <a href="/admin/merchants" className="text-xs text-brand hover:underline">View all</a>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-secondary/30">
+                  {["#", "Merchant", "Total Volume", "Orders"].map((h) => (
+                    <th key={h} className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/60">
+                {d.topMerchants.map((m, idx) => (
+                  <tr key={m._id} className="hover:bg-secondary/20 transition-colors">
+                    <td className="px-5 py-4 text-sm text-muted-foreground font-mono">{idx + 1}</td>
+                    <td className="px-5 py-4">
+                      <p className="text-sm font-medium text-foreground">{m.name ?? "—"}</p>
+                      <p className="text-xs text-muted-foreground">{m.email ?? m._id}</p>
+                    </td>
+                    <td className="px-5 py-4 font-mono text-sm text-foreground font-semibold">
+                      {fmtVolume(m.totalVolume)}
+                    </td>
+                    <td className="px-5 py-4 text-sm text-muted-foreground">
+                      {m.orderCount}
+                    </td>
+                  </tr>
                 ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/60">
-              {loading
-                ? Array.from({ length: 5 }).map((_, i) => (
-                    <tr key={i}>
-                      {Array.from({ length: 5 }).map((_, j) => (
-                        <td key={j} className="px-5 py-4"><div className="h-4 rounded bg-secondary animate-pulse" /></td>
-                      ))}
-                    </tr>
-                  ))
-                : topByVolume.map((m) => {
-                    let yesPct = 50;
-                    try { yesPct = Math.round(parseFloat(JSON.parse(m.outcomePrices ?? '["0.5"]')[0]) * 100); } catch {}
-                    return (
-                      <tr key={m.id} className="hover:bg-secondary/20 transition-colors">
-                        <td className="px-5 py-4 max-w-xs">
-                          <p className="font-medium text-foreground truncate text-sm">{m.question}</p>
-                          <p className="text-xs text-muted-foreground mt-0.5">{m.slug}</p>
-                        </td>
-                        <td className="px-5 py-4 font-mono text-sm text-foreground">{formatVolume(m.volumeNum ?? m.volume)}</td>
-                        <td className="px-5 py-4 font-mono text-sm text-foreground">{formatVolume(m.liquidityNum ?? m.liquidity)}</td>
-                        <td className="px-5 py-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-16 h-1.5 rounded-full bg-secondary overflow-hidden">
-                              <div className="h-full bg-yes rounded-full" style={{ width: `${yesPct}%` }} />
-                            </div>
-                            <span className="text-xs font-mono text-yes">{yesPct}%</span>
-                          </div>
-                        </td>
-                        <td className="px-5 py-4">
-                          <span className={cn(
-                            "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold",
-                            m.active && !m.closed ? "bg-yes/15 text-yes" : "bg-secondary text-muted-foreground"
-                          )}>
-                            {m.active && !m.closed ? "Active" : "Closed"}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-            </tbody>
-          </table>
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
 
+      {/* ── Orders table ── */}
+      <AdminOrdersSection
+        orders={adminOrders}
+        loading={ordersLoading}
+        page={ordersPage}
+        totalPages={ordersTotalPages}
+        total={ordersTotal}
+        onPageChange={setOrdersPage}
+      />
+
+      {/* ── Transactions table ── */}
+      <AdminTransactionsSection
+        txns={adminTxns}
+        loading={txnsLoading}
+        page={txnsPage}
+        totalPages={txnsTotalPages}
+        total={txnsTotal}
+        onPageChange={setTxnsPage}
+      />
     </div>
   );
 }

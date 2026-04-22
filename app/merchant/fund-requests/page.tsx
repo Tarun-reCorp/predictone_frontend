@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import {
   ArrowUpCircle, Clock, CheckCircle2, XCircle,
   ChevronLeft, ChevronRight, Loader2, Plus, X,
-  Filter, CalendarClock, ListChecks,
+  Filter, CalendarClock, ListChecks, FileText,
+  QrCode, CreditCard, Bitcoin,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
@@ -19,7 +20,9 @@ interface FundRequest {
   currency: string;
   paymentReference?: string;
   merchantNote?: string;
-  status: "pending" | "approved" | "rejected";
+  orderId?: string;
+  paymentMethod?: "upi" | "card" | "crypto" | "manual";
+  status: "draft" | "pending" | "approved" | "rejected";
   adminNote?: string;
   createdAt: string;
   reviewedAt?: string;
@@ -34,9 +37,17 @@ interface Summary {
 }
 
 const STATUS_STYLE = {
-  pending:  { label: "Pending",  color: "text-chart-4", bg: "bg-chart-4/15", icon: Clock },
-  approved: { label: "Approved", color: "text-yes",     bg: "bg-yes/15",     icon: CheckCircle2 },
-  rejected: { label: "Rejected", color: "text-no",      bg: "bg-no/15",      icon: XCircle },
+  draft:    { label: "Draft",    color: "text-muted-foreground", bg: "bg-secondary",   icon: FileText },
+  pending:  { label: "Pending",  color: "text-chart-4",          bg: "bg-chart-4/15",  icon: Clock },
+  approved: { label: "Approved", color: "text-yes",              bg: "bg-yes/15",       icon: CheckCircle2 },
+  rejected: { label: "Rejected", color: "text-no",               bg: "bg-no/15",        icon: XCircle },
+};
+
+const PM_STYLE = {
+  upi:    { label: "UPI",    icon: QrCode,      color: "text-chart-4", bg: "bg-chart-4/15" },
+  card:   { label: "Card",   icon: CreditCard,  color: "text-brand",   bg: "bg-brand/15"   },
+  crypto: { label: "Crypto", icon: Bitcoin,     color: "text-yes",     bg: "bg-yes/15"     },
+  manual: { label: "Manual", icon: FileText,    color: "text-muted-foreground", bg: "bg-secondary" },
 };
 
 function fmt(iso: string) {
@@ -53,13 +64,19 @@ export default function FundRequestsPage() {
   const [filterStatus, setFilterStatus] = useState("");
 
   // Form state
-  const [showForm, setShowForm] = useState(false);
-  const [amount, setAmount]     = useState("");
-  const [ref, setRef]           = useState("");
-  const [note, setNote]         = useState("");
+  const [showForm, setShowForm]   = useState(false);
+  const [amount, setAmount]       = useState("");
+  const [ref, setRef]             = useState("");
+  const [note, setNote]           = useState("");
+  const [method, setMethod]       = useState<"upi" | "card" | "crypto" | "manual">("manual");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError]   = useState("");
   const [formSuccess, setFormSuccess] = useState("");
+
+  // UTR submission modal for draft requests
+  const [utrModal, setUtrModal] = useState<{
+    requestId: string; value: string; loading: boolean; error: string;
+  } | null>(null);
 
   const load = useCallback(() => {
     if (!token) return;
@@ -92,16 +109,38 @@ export default function FundRequestsPage() {
       const res = await fetch(`${API}/api/merchant/fund-requests`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ amount: amt, paymentReference: ref, merchantNote: note }),
+        body: JSON.stringify({ amount: amt, paymentReference: ref, merchantNote: note, paymentMethod: method }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message ?? "Failed");
       setFormSuccess("Fund request submitted! Admin will review it.");
-      setAmount(""); setRef(""); setNote("");
+      setAmount(""); setRef(""); setNote(""); setMethod("manual");
       setTimeout(() => { setShowForm(false); setFormSuccess(""); load(); }, 1500);
     } catch (err: unknown) {
       setFormError(err instanceof Error ? err.message : "Failed to submit");
     } finally { setSubmitting(false); }
+  };
+
+  const handlePaymentDone = async () => {
+    if (!utrModal) return;
+    if (!utrModal.value.trim()) {
+      setUtrModal(m => m ? { ...m, error: "UTR number is required" } : null);
+      return;
+    }
+    setUtrModal(m => m ? { ...m, loading: true, error: "" } : null);
+    try {
+      const res = await fetch(`${API}/api/merchant/fund-requests/${utrModal.requestId}/submit-utr`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ utrNumber: utrModal.value.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message ?? "Failed");
+      setUtrModal(null);
+      load();
+    } catch (err: unknown) {
+      setUtrModal(m => m ? { ...m, loading: false, error: err instanceof Error ? err.message : "Failed" } : null);
+    }
   };
 
   const cards: SummaryCardItem[] = [
@@ -156,6 +195,20 @@ export default function FundRequestsPage() {
               </div>
 
               <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-foreground">Payment Method</label>
+                <select
+                  value={method}
+                  onChange={e => setMethod(e.target.value as typeof method)}
+                  className="w-full rounded-lg border border-border bg-secondary px-3 py-2.5 text-sm text-foreground outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20"
+                >
+                  <option value="upi">UPI</option>
+                  <option value="card">Card</option>
+                  <option value="crypto">Crypto</option>
+                  <option value="manual">Manual / Other</option>
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-foreground">UTR / Payment Reference</label>
                 <input
                   type="text" value={ref} onChange={e => setRef(e.target.value)}
@@ -189,6 +242,58 @@ export default function FundRequestsPage() {
         </div>
       )}
 
+      {/* UTR submission modal */}
+      {utrModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-border bg-card shadow-2xl">
+            <div className="flex items-center justify-between border-b border-border px-6 py-4">
+              <h2 className="text-base font-bold text-foreground">Submit UTR Number</h2>
+              <button onClick={() => setUtrModal(null)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-6 flex flex-col gap-4">
+              <p className="text-sm text-muted-foreground">
+                Enter the UTR / transaction reference number from your UPI app to confirm payment.
+              </p>
+              {utrModal.error && (
+                <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-4 py-2.5 text-sm text-destructive">
+                  {utrModal.error}
+                </div>
+              )}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-foreground">UTR Number *</label>
+                <input
+                  type="text"
+                  value={utrModal.value}
+                  onChange={e => setUtrModal(m => m ? { ...m, value: e.target.value, error: "" } : null)}
+                  placeholder="e.g. 425812345678"
+                  autoFocus
+                  className="w-full rounded-lg border border-border bg-secondary px-3 py-2.5 text-sm text-foreground outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20"
+                />
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setUtrModal(null)}
+                  className="flex-1 rounded-lg border border-border bg-secondary hover:bg-secondary/80 py-2.5 text-sm font-medium text-foreground transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handlePaymentDone}
+                  disabled={utrModal.loading}
+                  className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-brand hover:bg-brand/90 disabled:opacity-60 text-primary-foreground font-semibold py-2.5 text-sm transition-colors"
+                >
+                  {utrModal.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                  {utrModal.loading ? "Submitting…" : "Confirm Payment"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div className={TABLE.wrapper}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
@@ -201,6 +306,7 @@ export default function FundRequestsPage() {
               className="rounded-md border border-border bg-secondary text-xs text-foreground px-2.5 py-1.5 outline-none"
             >
               <option value="">All status</option>
+              <option value="draft">Draft</option>
               <option value="pending">Pending</option>
               <option value="approved">Approved</option>
               <option value="rejected">Rejected</option>
@@ -222,11 +328,14 @@ export default function FundRequestsPage() {
                 <thead>
                   <tr className={TABLE.thead}>
                     <th className={TABLE.thRight}>Amount</th>
+                    <th className={TABLE.th}>Method</th>
+                    <th className={TABLE.th}>Order ID</th>
                     <th className={TABLE.th}>UTR / Ref</th>
                     <th className={TABLE.th}>Note</th>
                     <th className={TABLE.th}>Status</th>
                     <th className={TABLE.th}>Admin Note</th>
                     <th className={TABLE.th}>Date</th>
+                    <th className={TABLE.th}></th>
                   </tr>
                 </thead>
                 <tbody className={TABLE.tbody}>
@@ -237,6 +346,19 @@ export default function FundRequestsPage() {
                         <td className={TABLE.tdRight}>
                           <span className="font-mono font-bold text-foreground">${req.amount.toFixed(2)}</span>
                           <span className="ml-1 text-xs text-muted-foreground">{req.currency}</span>
+                        </td>
+                        <td className={TABLE.td}>
+                          {(() => {
+                            const pm = PM_STYLE[req.paymentMethod ?? "manual"];
+                            return (
+                              <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold", pm.color, pm.bg)}>
+                                <pm.icon className="h-3 w-3" /> {pm.label}
+                              </span>
+                            );
+                          })()}
+                        </td>
+                        <td className={cn(TABLE.tdMuted, "max-w-[160px]")}>
+                          <p className="truncate font-mono text-xs">{req.orderId || "—"}</p>
                         </td>
                         <td className={cn(TABLE.tdMuted, "max-w-[160px]")}>
                           <p className="truncate">{req.paymentReference || "—"}</p>
@@ -253,6 +375,16 @@ export default function FundRequestsPage() {
                           <p className="truncate">{req.adminNote || "—"}</p>
                         </td>
                         <td className={cn(TABLE.tdMuted, "whitespace-nowrap")}>{fmt(req.createdAt)}</td>
+                        <td className={TABLE.td}>
+                          {req.status === "draft" && (
+                            <button
+                              onClick={() => setUtrModal({ requestId: req._id, value: "", loading: false, error: "" })}
+                              className="rounded-md bg-brand hover:bg-brand/90 text-primary-foreground text-xs font-semibold px-3 py-1.5 transition-colors whitespace-nowrap"
+                            >
+                              Payment Done
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}

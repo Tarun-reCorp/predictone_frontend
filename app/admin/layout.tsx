@@ -7,7 +7,7 @@ import {
   LayoutDashboard, TrendingUp, Settings,
   ChevronRight, Bell, CircleDot,
   LogOut, ChevronDown, ShoppingBag, ArrowUpDown,
-  ArrowUpCircle, Wallet, CheckCircle2, AlertCircle,
+  ArrowUpCircle, ArrowDownCircle, Wallet, CheckCircle2, AlertCircle,
   CreditCard, HandCoins,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -16,15 +16,16 @@ import { useWalletContext } from "@/contexts/wallet-context";
 import { AdminWalletConnect } from "@/components/admin-wallet-connect";
 
 const NAV_ITEMS = [
-  { label: "Overview",      href: "/admin",                icon: LayoutDashboard },
-  { label: "Orders",        href: "/admin/orders",         icon: ShoppingBag     },
-  { label: "Transactions",  href: "/admin/transactions",   icon: ArrowUpDown     },
-  { label: "Fund Requests", href: "/admin/fund-requests",  icon: ArrowUpCircle   },
-  { label: "Topup",         href: "/admin/topup",          icon: HandCoins       },
-  { label: "Wallet",        href: "/admin/wallet",         icon: Wallet          },
-  { label: "Markets",       href: "/admin/markets",        icon: TrendingUp      },
-  { label: "Merchants",     href: "/admin/merchants",      icon: CreditCard      },
-  { label: "Settings",      href: "/admin/settings",       icon: Settings        },
+  { label: "Overview",          href: "/admin",                     icon: LayoutDashboard },
+  { label: "Orders",            href: "/admin/orders",              icon: ShoppingBag     },
+  { label: "Transactions",      href: "/admin/transactions",        icon: ArrowUpDown     },
+  { label: "Fund Requests",     href: "/admin/fund-requests",       icon: ArrowUpCircle   },
+  { label: "Withdraw Requests", href: "/admin/withdraw-requests",   icon: ArrowDownCircle },
+  { label: "Topup",             href: "/admin/topup",               icon: HandCoins       },
+  { label: "Wallet",            href: "/admin/wallet",              icon: Wallet          },
+  { label: "Markets",           href: "/admin/markets",             icon: TrendingUp      },
+  { label: "Merchants",         href: "/admin/merchants",           icon: CreditCard      },
+  { label: "Settings",          href: "/admin/settings",            icon: Settings        },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

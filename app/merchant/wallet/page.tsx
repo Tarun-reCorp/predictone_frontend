@@ -5,7 +5,7 @@ import {
   Wallet, Receipt, Clock,
   ArrowUpCircle, ArrowDownCircle, ChevronLeft, ChevronRight, Loader2,
   QrCode, CreditCard, Bitcoin, Copy, Check, AlertCircle,
-  ArrowRight,
+  ArrowRight, ExternalLink,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
@@ -55,6 +55,8 @@ const TX_TYPE_STYLE: Record<string, { label: string; color: string; bg: string; 
   admin_credit:    { label: "Admin Credit",    color: "text-yes",     bg: "bg-yes/10",     icon: ArrowUpCircle   },
   admin_debit:     { label: "Admin Debit",     color: "text-no",      bg: "bg-no/10",      icon: ArrowDownCircle },
   refund:          { label: "Refund",          color: "text-brand",   bg: "bg-brand/10",   icon: ArrowUpCircle   },
+  withdraw_debit:  { label: "Withdrawal",      color: "text-no",      bg: "bg-no/10",      icon: ArrowDownCircle },
+  withdraw_refund: { label: "Withdraw Refund", color: "text-brand",   bg: "bg-brand/10",   icon: ArrowUpCircle   },
 };
 
 const FUND_TABS: { key: FundTab; label: string; icon: React.ElementType; disabled?: boolean }[] = [
@@ -175,6 +177,19 @@ export default function MerchantWalletPage() {
       // Open payment page in new tab (same behavior as card)
       if (json.paymentLink) {
         window.open(json.paymentLink, "_blank", "noopener,noreferrer");
+      }
+
+      // Auto-create a draft fund request so the merchant can submit UTR later
+      if (token) {
+        try {
+          await fetch(`${API}/api/merchant/fund-requests/draft`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ amount: parseFloat(upiAmount), orderId }),
+          });
+        } catch {
+          // silently fail — merchant can still submit a manual fund request
+        }
       }
     } catch (err: unknown) {
       setUpiError(err instanceof Error ? err.message : "Payment failed");
@@ -420,17 +435,27 @@ export default function MerchantWalletPage() {
                 {upiPayin && (
                   <div className="space-y-5">
                     <div className="text-center">
-                      <h3 className="text-base font-semibold text-foreground">Payment Opened</h3>
+                      <h3 className="text-base font-semibold text-foreground">Payment Ready</h3>
                       <p className="text-xs text-muted-foreground mt-1">
                         Amount: <span className="font-mono font-semibold text-foreground">₹{upiAmount}</span>
                       </p>
                     </div>
 
+                    {upiPayin.paymentLink && (
+                      <a
+                        href={upiPayin.paymentLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full flex items-center justify-center gap-2 rounded-lg bg-yes hover:bg-yes/90 text-primary-foreground font-semibold py-2.5 text-sm transition-colors"
+                      >
+                        <ExternalLink className="h-4 w-4" /> Open Payment Link
+                      </a>
+                    )}
+
                     <div className="rounded-lg border border-chart-4/30 bg-chart-4/10 p-4 space-y-1">
-                      <p className="text-xs font-semibold text-chart-4">After payment</p>
+                      <p className="text-xs font-semibold text-chart-4">Next steps</p>
                       <p className="text-xs text-muted-foreground">
-                        Complete your payment on the opened tab, then submit a fund request with the <b className="text-foreground">UTR / reference number</b> from your UPI app.
-                        Admin will approve it and your wallet will be credited.
+                        Complete your payment on the opened tab. Once done, go to <b className="text-foreground">Fund Requests</b> and click <b className="text-foreground">Payment Done</b> on the draft entry — enter your <b className="text-foreground">UTR number</b> to submit it for admin review.
                       </p>
                     </div>
 
@@ -445,7 +470,7 @@ export default function MerchantWalletPage() {
                         href="/merchant/fund-requests"
                         className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-brand hover:bg-brand/90 text-primary-foreground font-semibold py-2.5 text-sm transition-colors"
                       >
-                        Submit Fund Request <ArrowRight className="h-4 w-4" />
+                        Go to Fund Requests <ArrowRight className="h-4 w-4" />
                       </Link>
                     </div>
                   </div>
@@ -624,11 +649,22 @@ export default function MerchantWalletPage() {
                 {cardPayin && (
                   <div className="space-y-5">
                     <div className="text-center">
-                      <h3 className="text-base font-semibold text-foreground">Payment Opened</h3>
+                      <h3 className="text-base font-semibold text-foreground">Payment Ready</h3>
                       <p className="text-xs text-muted-foreground mt-1">
                         Amount: <span className="font-mono font-semibold text-foreground">${cardAmount}</span>
                       </p>
                     </div>
+
+                    {cardPayin.url && (
+                      <a
+                        href={cardPayin.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full flex items-center justify-center gap-2 rounded-lg bg-yes hover:bg-yes/90 text-primary-foreground font-semibold py-2.5 text-sm transition-colors"
+                      >
+                        <ExternalLink className="h-4 w-4" /> Open Payment Link
+                      </a>
+                    )}
 
                     <div className="rounded-lg border border-chart-4/30 bg-chart-4/10 p-4 space-y-1">
                       <p className="text-xs font-semibold text-chart-4">After payment</p>

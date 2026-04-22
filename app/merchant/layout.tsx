@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   TrendingUp, LayoutDashboard, User, ChevronRight,
   CircleDot, Bell, LogOut, ChevronDown,
-  ShoppingBag, ArrowUpDown, Wallet, ArrowUpCircle, Receipt, HandCoins,
+  ShoppingBag, ArrowUpDown, Wallet, ArrowUpCircle, Receipt, HandCoins, ArrowDownCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -19,6 +19,7 @@ const NAV_ITEMS = [
   { label: "Transactions",  href: "/merchant/transactions",  icon: ArrowUpDown     },
   { label: "Wallet",        href: "/merchant/wallet",        icon: Wallet          },
   { label: "Fund Requests", href: "/merchant/fund-requests", icon: ArrowUpCircle   },
+  { label: "Withdraw",      href: "/merchant/withdraw",      icon: ArrowDownCircle },
   { label: "Topup",         href: "/merchant/topup",         icon: HandCoins       },
   { label: "Profile",       href: "/merchant/profile",       icon: User            },
 ];
@@ -191,6 +192,20 @@ export default function MerchantLayout({ children }: { children: React.ReactNode
             <span className="text-foreground font-medium">{breadcrumb}</span>
           </div>
           <div className="flex items-center gap-3">
+            {/* Wallet balance pill */}
+            <Link
+              href="/merchant/wallet"
+              className="flex items-center gap-2 rounded-lg border border-yes/30 bg-yes/10 px-3 py-1.5 hover:bg-yes/15 transition-colors"
+            >
+              <Wallet className="h-3.5 w-3.5 text-yes shrink-0" />
+              <div className="leading-tight">
+                <p className="text-[9px] font-medium text-muted-foreground uppercase tracking-wider leading-none">Balance</p>
+                <p className="text-xs font-bold font-mono text-yes leading-tight">
+                  {internalBalance !== null ? `$${internalBalance.toFixed(2)}` : "—"}
+                </p>
+              </div>
+            </Link>
+
             <div className="flex items-center gap-1.5 rounded-md border border-yes/30 bg-yes/10 px-2.5 py-1">
               <CircleDot className="h-3 w-3 text-yes" />
               <span className="text-xs font-medium text-yes">Active</span>

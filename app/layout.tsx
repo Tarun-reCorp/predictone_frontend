@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Inter, JetBrains_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { Providers } from '@/components/providers'
+import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
@@ -41,6 +42,7 @@ export default function RootLayout({
         <Providers>
           {children}
         </Providers>
+        <Toaster position="top-right" richColors />
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>
