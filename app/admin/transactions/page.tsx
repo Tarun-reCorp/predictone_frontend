@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import {
   ArrowUpDown, ChevronLeft, ChevronRight,
-  Receipt, DollarSign, CheckCheck, XCircle, Loader2,
+  Receipt, DollarSign, TrendingUp, TrendingDown, Loader2,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
@@ -12,20 +12,13 @@ const BACKEND = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 interface AdminTransaction {
   _id: string;
-  merchantId?: { name?: string } | string;
+  userId?: { name?: string; email?: string } | string;
   type: string;
   amount: number;
-  currency: string;
-  status: "pending" | "confirmed" | "failed";
+  balanceAfter: number;
   description?: string;
   createdAt: string;
 }
-
-const STATUS_STYLE: Record<string, string> = {
-  pending:   "bg-chart-4/15 text-chart-4",
-  confirmed: "bg-yes/15 text-yes",
-  failed:    "bg-no/15 text-no",
-};
 
 function fmt(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", {
@@ -77,16 +70,16 @@ export default function AdminTransactionsPage() {
       {/* Summary cards */}
       {!loading && txns.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <SummaryCard icon={Receipt}    label="Total Txns"  value={String(total)}
+          <SummaryCard icon={Receipt}      label="Total Txns"  value={String(total)}
             accent="text-brand"   bg="bg-brand/10" />
-          <SummaryCard icon={DollarSign} label="Page Volume"
-            value={fmtAmt(txns.reduce((s, t) => s + t.amount, 0))}
+          <SummaryCard icon={DollarSign}   label="Page Volume"
+            value={fmtAmt(txns.reduce((s, t) => s + Math.abs(t.amount), 0))}
             accent="text-chart-4" bg="bg-chart-4/10" />
-          <SummaryCard icon={CheckCheck} label="Confirmed"
-            value={String(txns.filter((t) => t.status === "confirmed").length)}
+          <SummaryCard icon={TrendingUp}   label="Credits"
+            value={String(txns.filter((t) => t.amount > 0).length)}
             accent="text-yes"     bg="bg-yes/10" />
-          <SummaryCard icon={XCircle}    label="Failed"
-            value={String(txns.filter((t) => t.status === "failed").length)}
+          <SummaryCard icon={TrendingDown} label="Debits"
+            value={String(txns.filter((t) => t.amount < 0).length)}
             accent="text-no"      bg="bg-no/10" />
         </div>
       )}
@@ -108,40 +101,40 @@ export default function AdminTransactionsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-secondary/20">
-                    {["#", "Merchant", "Type", "Amount", "Description", "Status", "Date"].map((h) => (
+                    {["#", "Merchant", "Type", "Amount", "Balance After", "Description", "Date"].map((h) => (
                       <th key={h} className={cn(
                         "px-4 py-3 font-medium text-muted-foreground",
-                        h === "Amount" ? "text-right" : "text-left"
+                        h === "Amount" || h === "Balance After" ? "text-right" : "text-left"
                       )}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/50">
                   {txns.map((tx, idx) => {
-                    const merchant = typeof tx.merchantId === "object" ? tx.merchantId : null;
+                    const user = typeof tx.userId === "object" ? tx.userId : null;
+                    const isCredit = tx.amount >= 0;
                     return (
                       <tr key={tx._id} className="hover:bg-secondary/10 transition-colors">
                         <td className="px-4 py-3 text-muted-foreground font-mono">{(page - 1) * 10 + idx + 1}</td>
-                        <td className="px-4 py-3 text-foreground">
-                          {merchant?.name ?? (typeof tx.merchantId === "string" ? tx.merchantId.slice(0, 8) + "…" : "—")}
+                        <td className="px-4 py-3">
+                          <div className="text-foreground font-medium">{user?.name ?? "—"}</div>
+                          {user?.email && <div className="text-xs text-muted-foreground">{user.email}</div>}
                         </td>
                         <td className="px-4 py-3">
                           <span className="capitalize text-foreground font-medium">
                             {tx.type.replace(/_/g, " ")}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-right font-mono text-foreground">
-                          {fmtAmt(tx.amount)}{" "}
-                          <span className="text-muted-foreground">{tx.currency}</span>
+                        <td className="px-4 py-3 text-right font-mono">
+                          <span className={isCredit ? "text-yes" : "text-no"}>
+                            {isCredit ? "+" : ""}{fmtAmt(tx.amount)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono text-muted-foreground">
+                          {fmtAmt(tx.balanceAfter)}
                         </td>
                         <td className="px-4 py-3 text-muted-foreground max-w-[200px]">
                           <p className="truncate">{tx.description || "—"}</p>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={cn(
-                            "rounded-full px-2 py-0.5 font-semibold text-[10px] capitalize",
-                            STATUS_STYLE[tx.status] ?? "bg-secondary text-muted-foreground"
-                          )}>{tx.status}</span>
                         </td>
                         <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{fmt(tx.createdAt)}</td>
                       </tr>

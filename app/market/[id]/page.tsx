@@ -18,6 +18,8 @@ import { OrderBook } from "@/components/order-book";
 import { Header } from "@/components/header";
 import { BuyModal } from "@/components/buy-modal";
 import { AuthModal } from "@/components/auth-modal";
+import { OrderSuccessModal } from "@/components/order-success-modal";
+import { useOrder } from "@/hooks/use-order";
 
 export default function MarketPage() {
   const { id } = useParams<{ id: string }>();
@@ -26,7 +28,21 @@ export default function MarketPage() {
   const [loading, setLoading] = useState(true);
   const [notFoundState, setNotFoundState] = useState(false);
 
-  // Buy modal state
+  // Direct order placement (for FeaturedMarket inline form)
+  const {
+    placeOrder,
+    isPlacing: isFeaturedPlacing,
+    error: featuredError,
+    clearError: clearFeaturedError,
+    isLoggedIn,
+  } = useOrder();
+
+  // Success popup state
+  const [successModal, setSuccessModal] = useState<{
+    open: boolean; outcome: "Yes" | "No" | null; amount: number;
+  }>({ open: false, outcome: null, amount: 0 });
+
+  // Buy modal state (used only by Outcomes section buttons)
   const [buyOutcome, setBuyOutcome]     = useState<"Yes" | "No" | null>(null);
   const [buyAmount, setBuyAmount]       = useState<number>(0);
   const [buyModalOpen, setBuyModalOpen] = useState(false);
@@ -36,6 +52,32 @@ export default function MarketPage() {
     setBuyOutcome(outcome);
     setBuyAmount(amount);
     setBuyModalOpen(true);
+  };
+
+  // Step 1: open confirmation modal (no API call yet)
+  const handleFeaturedBuy = (outcome: "Yes" | "No", amount: number) => {
+    if (!isLoggedIn) {
+      setAuthModal({ open: true, tab: "login" });
+      return;
+    }
+    if (!market) return;
+    clearFeaturedError();
+    setSuccessModal({ open: true, outcome, amount });
+  };
+
+  // Step 2: user confirmed — now place the order
+  const handleConfirmOrder = async () => {
+    if (!market) return;
+    try {
+      await placeOrder({
+        marketId: market.id || market.conditionId,
+        outcome: successModal.outcome!,
+        amount: successModal.amount,
+        marketQuestion: market.question,
+      });
+    } catch {
+      // error surfaced via featuredError → modal shows error phase
+    }
   };
 
   useEffect(() => {
@@ -123,7 +165,13 @@ export default function MarketPage() {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
           {/* Main content */}
           <div className="lg:col-span-3 space-y-6">
-            <FeaturedMarket market={market} onBuy={openBuy} />
+            <FeaturedMarket
+              market={market}
+              onBuy={handleFeaturedBuy}
+              isLoggedIn={isLoggedIn}
+              isPlacing={isFeaturedPlacing}
+              placeError={featuredError}
+            />
 
             {/* Stats row */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -268,6 +316,17 @@ export default function MarketPage() {
           }}
         />
       )}
+
+      {/* ── Order Confirm / Success Modal ── */}
+      <OrderSuccessModal
+        open={successModal.open}
+        onClose={() => setSuccessModal((s) => ({ ...s, open: false }))}
+        onConfirm={handleConfirmOrder}
+        isPlacing={isFeaturedPlacing}
+        outcome={successModal.outcome}
+        amount={successModal.amount}
+        error={featuredError}
+      />
 
       {/* ── Auth Modal (triggered from BuyModal when not logged in) ── */}
       <AuthModal

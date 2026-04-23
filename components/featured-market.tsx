@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { TrendingUp, TrendingDown, BarChart2 } from "lucide-react";
+import { TrendingUp, TrendingDown, BarChart2, AlertCircle, Loader2 } from "lucide-react";
 import {
   type PolyMarket,
   type PriceHistory,
@@ -16,9 +16,12 @@ interface FeaturedMarketProps {
   market: PolyMarket;
   priceHistory?: PriceHistory[]; // unused — kept for API compatibility
   onBuy?: (outcome: "Yes" | "No", amount: number) => void;
+  isLoggedIn?: boolean;
+  isPlacing?: boolean;
+  placeError?: string | null;
 }
 
-export function FeaturedMarket({ market, onBuy }: FeaturedMarketProps) {
+export function FeaturedMarket({ market, onBuy, isLoggedIn, isPlacing, placeError }: FeaturedMarketProps) {
   const [tradeType, setTradeType] = useState<"yes" | "no">("yes");
   const [quantity, setQuantity]   = useState("100");
 
@@ -129,21 +132,35 @@ export function FeaturedMarket({ market, onBuy }: FeaturedMarketProps) {
             ))}
           </div>
 
+          {placeError && (
+            <div className="flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-2.5">
+              <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
+              <p className="text-xs text-destructive">{placeError}</p>
+            </div>
+          )}
+
           {/* Buy button */}
           <button
             onClick={() => onBuy?.(tradeType === "yes" ? "Yes" : "No", parseFloat(quantity) || 0)}
+            disabled={isPlacing}
             className={cn(
-              "w-full rounded-lg py-2.5 text-sm font-bold transition-all",
+              "w-full rounded-lg py-2.5 text-sm font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-60",
               tradeType === "yes"
                 ? "bg-yes hover:bg-yes/90 text-primary-foreground"
                 : "bg-no hover:bg-no/90 text-primary-foreground"
             )}
           >
-            Buy {tradeType === "yes" ? "Yes" : "No"} — ${quantity || "0"}
+            {isPlacing ? (
+              <><Loader2 className="h-4 w-4 animate-spin" /> Placing Order...</>
+            ) : !isLoggedIn && isLoggedIn !== undefined ? (
+              "Log In to Trade"
+            ) : (
+              <>Buy {tradeType === "yes" ? "Yes" : "No"} — ${quantity || "0"}</>
+            )}
           </button>
 
           <p className="text-center text-xs text-muted-foreground">
-            {onBuy ? "Click above to place order" : "Connect wallet to trade"}
+            Min $1 · Commission will be deducted from wallet
           </p>
         </div>
       </div>

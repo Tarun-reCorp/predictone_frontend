@@ -4,9 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  TrendingUp, LayoutDashboard, User, ChevronRight,
-  CircleDot, Bell, LogOut, ChevronDown,
+  TrendingUp, LayoutDashboard, ChevronRight,
+  CircleDot, Bell, LogOut,
   ShoppingBag, ArrowUpDown, Wallet, ArrowUpCircle, Receipt, HandCoins, ArrowDownCircle,
+  Store,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -29,8 +30,7 @@ export default function MerchantLayout({ children }: { children: React.ReactNode
   const router   = useRouter();
   const { user, token, loading, logout } = useAuth();
 
-  const [collapsed, setCollapsed]         = useState(false);
-  const [userMenuOpen, setUserMenuOpen]   = useState(false);
+  const [collapsed, setCollapsed]             = useState(false);
   const [internalBalance, setInternalBalance] = useState<number | null>(null);
 
   // Auth guard
@@ -145,35 +145,25 @@ export default function MerchantLayout({ children }: { children: React.ReactNode
         {/* User footer */}
         <div className="p-2 border-t border-border">
           {!collapsed ? (
-            <div className="relative">
+            <div className="flex items-center gap-2 rounded-md px-2.5 py-2">
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-brand text-primary-foreground text-[10px] font-bold shrink-0">
+                {initials}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-foreground truncate">{user.name}</p>
+                <p className="text-[10px] text-muted-foreground truncate">{user.email}</p>
+              </div>
               <button
-                onClick={() => setUserMenuOpen(v => !v)}
-                className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 hover:bg-secondary transition-colors"
+                onClick={() => { logout(); router.replace("/"); }}
+                title="Log Out"
+                className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-secondary transition-colors shrink-0"
               >
-                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-brand text-primary-foreground text-[10px] font-bold shrink-0">
-                  {initials}
-                </div>
-                <div className="flex-1 min-w-0 text-left">
-                  <p className="text-xs font-semibold text-foreground truncate">{user.name}</p>
-                  <p className="text-[10px] text-muted-foreground truncate">{user.email}</p>
-                </div>
-                <ChevronDown className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform shrink-0", userMenuOpen && "rotate-180")} />
+                <LogOut className="h-3.5 w-3.5" />
               </button>
-              {userMenuOpen && (
-                <div className="absolute bottom-full left-0 right-0 mb-1 rounded-lg border border-border bg-card shadow-xl overflow-hidden">
-                  <button
-                    onClick={() => { logout(); router.replace("/merchant/login"); }}
-                    className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-destructive hover:bg-destructive/10 transition-colors"
-                  >
-                    <LogOut className="h-4 w-4" />
-                    Log Out
-                  </button>
-                </div>
-              )}
             </div>
           ) : (
             <button
-              onClick={() => { logout(); router.replace("/merchant/login"); }}
+              onClick={() => { logout(); router.replace("/"); }}
               className="flex w-full items-center justify-center p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-secondary transition-colors"
               title="Log Out"
             >
@@ -192,6 +182,15 @@ export default function MerchantLayout({ children }: { children: React.ReactNode
             <span className="text-foreground font-medium">{breadcrumb}</span>
           </div>
           <div className="flex items-center gap-3">
+            {/* Markets home button */}
+            <Link
+              href="/"
+              className="flex items-center gap-1.5 rounded-lg border border-border bg-secondary/50 hover:bg-secondary px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Store className="h-3.5 w-3.5" />
+              <span>Markets</span>
+            </Link>
+
             {/* Wallet balance pill */}
             <Link
               href="/merchant/wallet"

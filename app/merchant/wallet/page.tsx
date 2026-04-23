@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Wallet, Receipt, Clock,
-  ArrowUpCircle, ArrowDownCircle, ChevronLeft, ChevronRight, Loader2,
+  Loader2,
   QrCode, CreditCard, Bitcoin, Copy, Check, AlertCircle,
   ArrowRight, ExternalLink,
 } from "lucide-react";
@@ -19,15 +19,6 @@ interface WalletInfo {
   balance: number;
   totalCommissionPaid: number;
   pendingCount: number;
-}
-
-interface WalletTx {
-  _id: string;
-  type: string;
-  amount: number;
-  balanceAfter: number;
-  description?: string;
-  createdAt: string;
 }
 
 interface UpiPayinResponse {
@@ -48,17 +39,6 @@ type FundTab = "upi" | "crypto" | "card";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-const TX_TYPE_STYLE: Record<string, { label: string; color: string; bg: string; icon: React.ElementType }> = {
-  fund_credit:     { label: "Fund Credit",     color: "text-yes",     bg: "bg-yes/10",     icon: ArrowUpCircle   },
-  order_deduction: { label: "Order Deduction", color: "text-no",      bg: "bg-no/10",      icon: ArrowDownCircle },
-  commission:      { label: "Commission",      color: "text-chart-4", bg: "bg-chart-4/10", icon: Receipt         },
-  admin_credit:    { label: "Admin Credit",    color: "text-yes",     bg: "bg-yes/10",     icon: ArrowUpCircle   },
-  admin_debit:     { label: "Admin Debit",     color: "text-no",      bg: "bg-no/10",      icon: ArrowDownCircle },
-  refund:          { label: "Refund",          color: "text-brand",   bg: "bg-brand/10",   icon: ArrowUpCircle   },
-  withdraw_debit:  { label: "Withdrawal",      color: "text-no",      bg: "bg-no/10",      icon: ArrowDownCircle },
-  withdraw_refund: { label: "Withdraw Refund", color: "text-brand",   bg: "bg-brand/10",   icon: ArrowUpCircle   },
-};
-
 const FUND_TABS: { key: FundTab; label: string; icon: React.ElementType; disabled?: boolean }[] = [
   { key: "upi",    label: "UPI",    icon: QrCode     },
   { key: "crypto", label: "Crypto", icon: Bitcoin     },
@@ -69,13 +49,6 @@ const PRESETS = [100, 500, 1000, 5000];
 
 const CRYPTO_WALLET = "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18";
 const CRYPTO_NETWORK = "Polygon (MATIC)";
-
-function fmt(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", {
-    month: "short", day: "numeric", year: "numeric",
-    hour: "2-digit", minute: "2-digit",
-  });
-}
 
 function generateOrderId(): string {
   return `PO-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -91,16 +64,11 @@ export default function MerchantWalletPage() {
   const { token } = useAuth();
 
   // Wallet data
-  const [info, setInfo]         = useState<WalletInfo | null>(null);
-  const [txns, setTxns]         = useState<WalletTx[]>([]);
-  const [loading, setLoading]   = useState(true);
-  const [txLoading, setTxLoading] = useState(true);
-  const [page, setPage]         = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const [info, setInfo]       = useState<WalletInfo | null>(null);
+  const [loading, setLoading] = useState(true);
 
   // Add Funds
-  const [showAddFunds, setShowAddFunds] = useState(false);
-  const [fundTab, setFundTab]           = useState<FundTab>("upi");
+  const [fundTab, setFundTab] = useState<FundTab>("upi");
 
   // UPI state
   const [upiAmount, setUpiAmount]           = useState("");
@@ -133,16 +101,6 @@ export default function MerchantWalletPage() {
   }, [token]);
 
   useEffect(() => { loadWalletInfo(); }, [loadWalletInfo]);
-
-  useEffect(() => {
-    if (!token) return;
-    setTxLoading(true);
-    fetch(`${API}/api/merchant/wallet/ledger?page=${page}&limit=15`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
-      .then(d => { setTxns(d.data ?? []); setTotalPages(d.meta?.totalPages ?? 1); })
-      .catch(() => {})
-      .finally(() => setTxLoading(false));
-  }, [token, page]);
 
   // ── UPI: Create Payin ────────────────────────────────────────────────────────
 
@@ -253,6 +211,19 @@ export default function MerchantWalletPage() {
 
       // Open payment page in new tab
       window.open(json.url, "_blank", "noopener,noreferrer");
+
+      // Auto-create a draft fund request so the merchant can submit reference later
+      if (token) {
+        try {
+          await fetch(`${API}/api/merchant/fund-requests/draft`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ amount: amt, orderId: orderRef }),
+          });
+        } catch {
+          // silently fail — merchant can still submit a manual fund request
+        }
+      }
     } catch (err: unknown) {
       setCardError(err instanceof Error ? err.message : "Card payment failed");
     } finally {
@@ -285,23 +256,9 @@ export default function MerchantWalletPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Wallet</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Your balance and transaction history</p>
-        </div>
-        <button
-          onClick={() => { setShowAddFunds(!showAddFunds); if (showAddFunds) { resetUpi(); resetCard(); } }}
-          className={cn(
-            "flex items-center gap-2 rounded-lg font-semibold px-4 py-2 text-sm transition-colors",
-            showAddFunds
-              ? "bg-secondary border border-border text-foreground hover:bg-secondary/80"
-              : "bg-brand hover:bg-brand/90 text-primary-foreground"
-          )}
-        >
-          <ArrowUpCircle className="h-4 w-4" />
-          {showAddFunds ? "Close" : "Add Funds"}
-        </button>
+      <div>
+        <h1 className="text-2xl font-bold text-foreground">Wallet</h1>
+        <p className="text-sm text-muted-foreground mt-0.5">Your balance and fund management</p>
       </div>
 
       {/* Balance cards */}
@@ -335,9 +292,8 @@ export default function MerchantWalletPage() {
         </div>
       )}
 
-      {/* ── Add Funds Section (inline, no modal) ── */}
-      {showAddFunds && (
-        <div className="rounded-xl border border-border bg-card overflow-hidden">
+      {/* ── Add Funds Section ── */}
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
           {/* Tab bar */}
           <div className="flex border-b border-border">
             {FUND_TABS.map(tab => (
@@ -694,79 +650,7 @@ export default function MerchantWalletPage() {
             )}
           </div>
         </div>
-      )}
 
-      {/* ── Transaction Ledger ── */}
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-          <p className="text-sm font-semibold text-foreground">Transaction Ledger</p>
-        </div>
-        {txLoading ? (
-          <div className="flex items-center justify-center py-16"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-        ) : txns.length === 0 ? (
-          <div className="flex flex-col items-center py-16 gap-2 text-center">
-            <Receipt className="h-9 w-9 text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">No transactions yet</p>
-          </div>
-        ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border bg-secondary/30">
-                    {["Type", "Amount", "Balance After", "Description", "Date"].map(h => (
-                      <th key={h} className={cn("px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground", h === "Amount" || h === "Balance After" ? "text-right" : "")}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60">
-                  {txns.map(tx => {
-                    const meta = TX_TYPE_STYLE[tx.type] ?? { label: tx.type, color: "text-foreground", bg: "bg-secondary", icon: Receipt };
-                    const isCredit = tx.amount > 0;
-                    return (
-                      <tr key={tx._id} className="hover:bg-secondary/20 transition-colors">
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <div className={cn("flex h-7 w-7 items-center justify-center rounded-lg shrink-0", meta.bg)}>
-                              <meta.icon className={cn("h-3.5 w-3.5", meta.color)} />
-                            </div>
-                            <span className={cn("text-sm font-medium", meta.color)}>{meta.label}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <span className={cn("text-sm font-bold font-mono", isCredit ? "text-yes" : "text-no")}>
-                            {isCredit ? "+" : ""}${Math.abs(tx.amount).toFixed(2)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <span className="text-sm font-mono text-foreground">${tx.balanceAfter.toFixed(2)}</span>
-                        </td>
-                        <td className="px-4 py-3 max-w-xs">
-                          <p className="text-sm text-muted-foreground truncate">{tx.description || "—"}</p>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">{fmt(tx.createdAt)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <div className="flex items-center justify-between px-6 py-4 border-t border-border bg-secondary/10">
-              <span className="text-sm text-muted-foreground">Page <b>{page}</b> of <b>{totalPages}</b></span>
-              <div className="flex gap-2">
-                <button onClick={() => setPage(p => p - 1)} disabled={page <= 1}
-                  className="flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-40 transition-colors">
-                  <ChevronLeft className="h-4 w-4" /> Prev
-                </button>
-                <button onClick={() => setPage(p => p + 1)} disabled={page >= totalPages}
-                  className="flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-40 transition-colors">
-                  Next <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
     </div>
   );
 }

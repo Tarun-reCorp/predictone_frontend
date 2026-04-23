@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   ShoppingBag, ChevronLeft, ChevronRight,
-  Hash, DollarSign, CheckCheck, Timer, Loader2,
+  Hash, DollarSign, CheckCheck, Timer, Loader2, Search, X, Download,
 } from "lucide-react";
+import * as XLSX from "xlsx";
+
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
 
@@ -12,13 +14,12 @@ const BACKEND = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 interface AdminOrder {
   _id: string;
+  orderNumber?: string;
   userId?: { _id?: string; name?: string; email?: string } | string;
   conditionId: string;
   marketQuestion?: string;
   outcome: "Yes" | "No";
-  side: "buy" | "sell";
   amount: number;
-  price: number;
   status: "pending" | "submitted" | "matched" | "settled" | "failed" | "cancelled";
   createdAt: string;
 }
@@ -32,6 +33,8 @@ const STATUS_STYLE: Record<string, string> = {
   cancelled: "bg-muted-foreground/15 text-muted-foreground",
 };
 
+const ALL_STATUSES = ["pending", "submitted", "matched", "settled", "failed", "cancelled"];
+
 function fmt(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", {
     month: "short", day: "numeric", year: "numeric",
@@ -39,6 +42,38 @@ function fmt(iso: string) {
   });
 }
 function fmtAmt(n: number) { return `$${n.toFixed(2)}`; }
+
+interface Filters {
+  marketQuestion: string;
+  orderNumber:    string;
+  merchantSearch: string;
+  outcome:        string;
+  status:         string;
+  minAmount:      string;
+  maxAmount:      string;
+  dateFrom:       string;
+  dateTo:         string;
+}
+
+const EMPTY: Filters = {
+  marketQuestion: "", orderNumber: "", merchantSearch: "",
+  outcome: "", status: "", minAmount: "", maxAmount: "",
+  dateFrom: "", dateTo: "",
+};
+
+function buildFilterParams(f: Filters, extra: Record<string, string> = {}): URLSearchParams {
+  const q = new URLSearchParams(extra);
+  if (f.marketQuestion) q.set("marketQuestion", f.marketQuestion);
+  if (f.orderNumber)    q.set("orderNumber",    f.orderNumber);
+  if (f.merchantSearch) q.set("merchantSearch", f.merchantSearch);
+  if (f.outcome)        q.set("outcome",        f.outcome);
+  if (f.status)         q.set("status",         f.status);
+  if (f.minAmount)      q.set("minAmount",      f.minAmount);
+  if (f.maxAmount)      q.set("maxAmount",      f.maxAmount);
+  if (f.dateFrom)       q.set("dateFrom",       f.dateFrom);
+  if (f.dateTo)         q.set("dateTo",         f.dateTo);
+  return q;
+}
 
 export default function AdminOrdersPage() {
   const { token } = useAuth();
@@ -48,55 +83,254 @@ export default function AdminOrdersPage() {
   const [page, setPage]             = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal]           = useState(0);
+  const [filters, setFilters]       = useState<Filters>(EMPTY);
+  const [datePreset, setDatePreset] = useState<"all" | "today" | "week" | "month">("all");
+  const [exporting, setExporting]   = useState(false);
 
-  useEffect(() => {
+  const activeCount = Object.values(filters).filter((v) => v !== "").length;
+
+  const applyDatePreset = (preset: typeof datePreset) => {
+    setDatePreset(preset);
+    setPage(1);
+    const today = new Date();
+    const toStr = (d: Date) => d.toISOString().slice(0, 10);
+    if (preset === "all") {
+      setFilters((f) => ({ ...f, dateFrom: "", dateTo: "" }));
+    } else if (preset === "today") {
+      const s = toStr(today);
+      setFilters((f) => ({ ...f, dateFrom: s, dateTo: s }));
+    } else if (preset === "week") {
+      const from = new Date(today);
+      from.setDate(today.getDate() - 6);
+      setFilters((f) => ({ ...f, dateFrom: toStr(from), dateTo: toStr(today) }));
+    } else if (preset === "month") {
+      const from = new Date(today.getFullYear(), today.getMonth(), 1);
+      setFilters((f) => ({ ...f, dateFrom: toStr(from), dateTo: toStr(today) }));
+    }
+  };
+
+  const fetchOrders = useCallback((pageNum: number, f: Filters, signal?: AbortSignal) => {
     if (!token) return;
     setLoading(true);
-    fetch(`${BACKEND}/api/admin/orders?page=${page}&limit=10`, {
+    const q = buildFilterParams(f, { page: String(pageNum), limit: "10" });
+
+    fetch(`${BACKEND}/api/admin/orders?${q}`, {
       headers: { Authorization: `Bearer ${token}` },
+      signal,
     })
       .then((r) => r.json())
       .then((data) => {
-        const list = data.data ?? data.docs ?? [];
-        setOrders(list);
+        setOrders(data.data ?? data.docs ?? []);
         setTotalPages(data.meta?.totalPages ?? data.totalPages ?? 1);
-        setTotal(data.meta?.total ?? data.total ?? list.length);
+        setTotal(data.meta?.total ?? data.total ?? 0);
       })
-      .catch(() => setOrders([]))
-      .finally(() => setLoading(false));
-  }, [token, page]);
+      .catch((err) => { if (err.name !== "AbortError") setOrders([]); })
+      .finally(() => { if (!signal?.aborted) setLoading(false); });
+  }, [token]);
+
+  // Debounce: 400ms after filters/page change; abort stale in-flight requests
+  useEffect(() => {
+    const controller = new AbortController();
+    const t = setTimeout(() => fetchOrders(page, filters, controller.signal), 400);
+    return () => { clearTimeout(t); controller.abort(); };
+  }, [page, filters, fetchOrders]);
+
+  const set = (key: keyof Filters) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+      setPage(1);
+      if (key === "dateFrom" || key === "dateTo") setDatePreset("all");
+      setFilters((f) => ({ ...f, [key]: e.target.value }));
+    };
+
+  const clearAll = () => { setFilters(EMPTY); setPage(1); setDatePreset("all"); };
+
+  const exportToExcel = async () => {
+    if (!token) return;
+    setExporting(true);
+    try {
+      const q = buildFilterParams(filters, { page: "1", limit: "5000" });
+
+      const res  = await fetch(`${BACKEND}/api/admin/orders?${q}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      const rows: AdminOrder[] = data.data ?? data.docs ?? [];
+
+      const sheet = rows.map((o, i) => {
+        const merchant = typeof o.userId === "object" ? o.userId : null;
+        return {
+          "#":          i + 1,
+          "Order ID":   o.orderNumber ?? o._id.slice(-8).toUpperCase(),
+          "Merchant":   merchant?.name ?? "—",
+          "Email":      merchant?.email ?? "—",
+          "Market":     o.marketQuestion ?? o.conditionId,
+          "Outcome":    o.outcome,
+          "Amount ($)": o.amount,
+          "Status":     o.status,
+          "Date":       new Date(o.createdAt).toLocaleString("en-IN"),
+        };
+      });
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(sheet);
+
+      // Column widths
+      ws["!cols"] = [
+        { wch: 5 }, { wch: 14 }, { wch: 20 }, { wch: 26 },
+        { wch: 42 }, { wch: 9 }, { wch: 12 }, { wch: 12 }, { wch: 22 },
+      ];
+
+      XLSX.utils.book_append_sheet(wb, ws, "Orders");
+      const date = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(wb, `orders_${date}.xlsx`);
+    } catch {
+      // silent fail
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Page heading */}
-      <div className="flex items-center gap-2">
-        <ShoppingBag className="h-5 w-5 text-brand" />
-        <h1 className="text-xl font-bold text-foreground">All Orders</h1>
-        {total > 0 && (
-          <span className="rounded-full bg-brand/20 text-brand text-xs font-bold px-2 py-0.5 ml-1">
-            {total}
-          </span>
-        )}
+
+      {/* ── Page heading ── */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <ShoppingBag className="h-5 w-5 text-brand" />
+          <h1 className="text-xl font-bold text-foreground">All Orders</h1>
+          {total > 0 && (
+            <span className="rounded-full bg-brand/20 text-brand text-xs font-bold px-2 py-0.5 ml-1">{total}</span>
+          )}
+        </div>
+        <button
+          onClick={exportToExcel}
+          disabled={exporting || total === 0}
+          className="flex items-center gap-1.5 rounded-lg border border-border bg-secondary/50 hover:bg-secondary px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors"
+        >
+          {exporting
+            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            : <Download className="h-3.5 w-3.5" />}
+          {exporting ? "Exporting…" : "Export Excel"}
+        </button>
       </div>
 
-      {/* Summary cards */}
-      {!loading && orders.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <SummaryCard icon={Hash}       label="Total Orders"  value={String(total)}
-            accent="text-brand"   bg="bg-brand/10" />
-          <SummaryCard icon={DollarSign} label="Page Volume"
-            value={fmtAmt(orders.reduce((s, o) => s + o.amount, 0))}
-            accent="text-chart-4" bg="bg-chart-4/10" />
-          <SummaryCard icon={CheckCheck} label="Settled"
-            value={String(orders.filter((o) => o.status === "settled").length)}
-            accent="text-yes"     bg="bg-yes/10" />
-          <SummaryCard icon={Timer}      label="Pending"
-            value={String(orders.filter((o) => o.status === "pending" || o.status === "submitted").length)}
-            accent="text-chart-4" bg="bg-chart-4/10" />
+      {/* ── Summary cards + date presets ── */}
+      <div className="space-y-2.5">
+        {/* Date preset chips */}
+        <div className="flex items-center gap-1.5">
+          {(["all", "today", "week", "month"] as const).map((p) => {
+            const label = { all: "All Time", today: "Today", week: "Last 7 Days", month: "This Month" }[p];
+            return (
+              <button key={p} onClick={() => applyDatePreset(p)}
+                className={cn(
+                  "rounded-full px-3 py-1 text-xs font-medium border transition-colors",
+                  datePreset === p
+                    ? "bg-brand text-white border-brand"
+                    : "bg-secondary/50 text-muted-foreground border-border hover:text-foreground hover:bg-secondary"
+                )}>
+                {label}
+              </button>
+            );
+          })}
+          {(filters.dateFrom || filters.dateTo) && datePreset === "all" && (
+            <span className="text-xs text-muted-foreground ml-1">
+              {filters.dateFrom} → {filters.dateTo}
+            </span>
+          )}
         </div>
-      )}
 
-      {/* Table */}
+        {/* Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <SummaryCard icon={Hash}       label="Total Orders" value={String(total)}
+            accent="text-brand"   bg="bg-brand/10"
+            sub={datePreset !== "all" ? { all: "", today: "Today", week: "Last 7 days", month: "This month" }[datePreset] : undefined} />
+          <SummaryCard icon={DollarSign} label="Volume"
+            value={loading ? "…" : fmtAmt(orders.reduce((s, o) => s + o.amount, 0))}
+            accent="text-chart-4" bg="bg-chart-4/10" sub="Current page" />
+          <SummaryCard icon={CheckCheck} label="Settled"
+            value={loading ? "…" : String(orders.filter((o) => o.status === "settled").length)}
+            accent="text-yes"     bg="bg-yes/10" sub="Current page" />
+          <SummaryCard icon={Timer}      label="Pending"
+            value={loading ? "…" : String(orders.filter((o) => ["pending","submitted"].includes(o.status)).length)}
+            accent="text-chart-4" bg="bg-chart-4/10" sub="Current page" />
+        </div>
+      </div>
+
+      {/* ── Filters ── */}
+      <div className="rounded-xl border border-border bg-card px-4 py-3 space-y-2.5">
+
+        {/* Row 1 — search inputs */}
+        <div className="flex flex-wrap gap-2">
+          {/* Market search */}
+          <div className="relative flex-1 min-w-[160px]">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+            <input value={filters.marketQuestion} onChange={set("marketQuestion")}
+              placeholder="Search market"
+              className="w-full rounded-md border border-border bg-secondary/40 pl-7 pr-2.5 h-8 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 focus:border-brand/50 transition-colors" />
+          </div>
+
+          {/* Order ID */}
+          <div className="relative w-40">
+            <input value={filters.orderNumber} onChange={set("orderNumber")}
+              placeholder="Order ID"
+              className="w-full rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 focus:border-brand/50 font-mono transition-colors" />
+          </div>
+
+          {/* Merchant */}
+          <div className="relative flex-1 min-w-[140px]">
+            <input value={filters.merchantSearch} onChange={set("merchantSearch")}
+              placeholder="Merchant"
+              className="w-full rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 focus:border-brand/50 transition-colors" />
+          </div>
+
+          {/* Outcome */}
+          <select value={filters.outcome} onChange={set("outcome")}
+            className="rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 focus:border-brand/50 transition-colors w-32">
+            <option value="">Outcome</option>
+            <option value="Yes">Yes</option>
+            <option value="No">No</option>
+          </select>
+
+          {/* Status */}
+          <select value={filters.status} onChange={set("status")}
+            className="rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 focus:border-brand/50 transition-colors w-36">
+            <option value="">Status</option>
+            {ALL_STATUSES.map((s) => (
+              <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
+            ))}
+          </select>
+
+          {/* Amount range */}
+          <div className="flex items-center gap-1">
+            <input value={filters.minAmount} onChange={set("minAmount")} type="number" min="0"
+              placeholder="Min $"
+              className="w-20 rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 focus:border-brand/50 transition-colors" />
+            <span className="text-muted-foreground text-xs">–</span>
+            <input value={filters.maxAmount} onChange={set("maxAmount")} type="number" min="0"
+              placeholder="Max $"
+              className="w-20 rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 focus:border-brand/50 transition-colors" />
+          </div>
+
+          {/* Date range */}
+          <div className="flex items-center gap-1">
+            <input type="date" value={filters.dateFrom} onChange={set("dateFrom")}
+              className="rounded-md border border-border bg-secondary/40 px-2 h-8 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 focus:border-brand/50 transition-colors" />
+            <span className="text-muted-foreground text-xs">–</span>
+            <input type="date" value={filters.dateTo} onChange={set("dateTo")}
+              className="rounded-md border border-border bg-secondary/40 px-2 h-8 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 focus:border-brand/50 transition-colors" />
+          </div>
+
+          {/* Clear */}
+          {activeCount > 0 && (
+            <button onClick={clearAll}
+              className="flex items-center gap-1 rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors whitespace-nowrap">
+              <X className="h-3 w-3" /> Clear ({activeCount})
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Table ── */}
       <div className="rounded-xl border border-border bg-card overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center py-16">
@@ -105,7 +339,12 @@ export default function AdminOrdersPage() {
         ) : orders.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-2 text-center">
             <ShoppingBag className="h-9 w-9 text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">No orders found</p>
+            <p className="text-sm text-muted-foreground">
+              {activeCount > 0 ? "No orders match the applied filters" : "No orders found"}
+            </p>
+            {activeCount > 0 && (
+              <button onClick={clearAll} className="text-xs text-brand hover:underline mt-1">Clear filters</button>
+            )}
           </div>
         ) : (
           <>
@@ -113,7 +352,7 @@ export default function AdminOrdersPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-secondary/30">
-                    {["#", "Order ID", "Merchant", "Market", "Outcome", "Side", "Amount", "Status", "Date"].map((h) => (
+                    {["#", "Order ID", "Merchant", "Market", "Outcome", "Amount", "Status", "Date"].map((h) => (
                       <th key={h} className={cn(
                         "px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground",
                         h === "Amount" ? "text-right" : "text-left"
@@ -126,12 +365,14 @@ export default function AdminOrdersPage() {
                     const merchant = typeof o.userId === "object" ? o.userId : null;
                     return (
                       <tr key={o._id} className="hover:bg-secondary/20 transition-colors">
-                        <td className="px-4 py-3 text-sm text-muted-foreground font-mono">{(page - 1) * 10 + idx + 1}</td>
-                        <td className="px-4 py-3 text-sm font-mono text-muted-foreground">
-                          <span title={o._id}>{o._id.slice(-8).toUpperCase()}</span>
+                        <td className="px-4 py-3 text-sm text-muted-foreground">{(page - 1) * 10 + idx + 1}</td>
+                        <td className="px-4 py-3">
+                          <span className="text-xs font-mono font-semibold text-brand bg-brand/10 rounded px-2 py-1">
+                            {o.orderNumber ?? o._id.slice(-8).toUpperCase()}
+                          </span>
                         </td>
-                        <td className="px-4 py-3 text-sm text-foreground">
-                          <p className="font-medium">{merchant?.name ?? "—"}</p>
+                        <td className="px-4 py-3">
+                          <p className="text-sm font-medium text-foreground">{merchant?.name ?? "—"}</p>
                           {merchant?.email && <p className="text-xs text-muted-foreground">{merchant.email}</p>}
                         </td>
                         <td className="px-4 py-3 max-w-[180px]">
@@ -145,7 +386,6 @@ export default function AdminOrdersPage() {
                             o.outcome === "Yes" ? "bg-yes/15 text-yes" : "bg-no/15 text-no"
                           )}>{o.outcome}</span>
                         </td>
-                        <td className="px-4 py-3 text-sm capitalize text-muted-foreground">{o.side}</td>
                         <td className="px-4 py-3 text-right text-sm font-semibold font-mono text-foreground">{fmtAmt(o.amount)}</td>
                         <td className="px-4 py-3">
                           <span className={cn(
@@ -168,8 +408,10 @@ export default function AdminOrdersPage() {
   );
 }
 
-function SummaryCard({ icon: Icon, label, value, accent, bg }: {
-  icon: React.ElementType; label: string; value: string; accent: string; bg: string;
+
+function SummaryCard({ icon: Icon, label, value, accent, bg, sub }: {
+  icon: React.ElementType; label: string; value: string;
+  accent: string; bg: string; sub?: string;
 }) {
   return (
     <div className="rounded-xl border border-border bg-card p-4 flex items-center gap-3">
@@ -179,6 +421,7 @@ function SummaryCard({ icon: Icon, label, value, accent, bg }: {
       <div>
         <p className="text-xs text-muted-foreground">{label}</p>
         <p className={cn("text-lg font-bold font-mono mt-0.5", accent)}>{value}</p>
+        {sub && <p className="text-[10px] text-muted-foreground/60 mt-0.5">{sub}</p>}
       </div>
     </div>
   );
@@ -191,16 +434,12 @@ function Pagination({ page, totalPages, onChange }: {
     <div className="flex items-center justify-between px-5 py-3 border-t border-border">
       <span className="text-xs text-muted-foreground">Page {page} of {totalPages}</span>
       <div className="flex items-center gap-1">
-        <button
-          onClick={() => onChange(page - 1)} disabled={page <= 1}
-          className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-40 transition-colors"
-        >
+        <button onClick={() => onChange(page - 1)} disabled={page <= 1}
+          className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-40 transition-colors">
           <ChevronLeft className="h-3.5 w-3.5" /> Prev
         </button>
-        <button
-          onClick={() => onChange(page + 1)} disabled={page >= totalPages}
-          className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-40 transition-colors"
-        >
+        <button onClick={() => onChange(page + 1)} disabled={page >= totalPages}
+          className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-40 transition-colors">
           Next <ChevronRight className="h-3.5 w-3.5" />
         </button>
       </div>

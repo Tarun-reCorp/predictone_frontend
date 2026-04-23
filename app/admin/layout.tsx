@@ -6,14 +6,12 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, TrendingUp, Settings,
   ChevronRight, Bell, CircleDot,
-  LogOut, ChevronDown, ShoppingBag, ArrowUpDown,
-  ArrowUpCircle, ArrowDownCircle, Wallet, CheckCircle2, AlertCircle,
-  CreditCard, HandCoins,
+  LogOut, ShoppingBag, ArrowUpDown,
+  ArrowUpCircle, ArrowDownCircle, Wallet,
+  CreditCard, HandCoins, Store,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
-import { useWalletContext } from "@/contexts/wallet-context";
-import { AdminWalletConnect } from "@/components/admin-wallet-connect";
 
 const NAV_ITEMS = [
   { label: "Overview",          href: "/admin",                     icon: LayoutDashboard },
@@ -32,10 +30,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname();
   const router   = useRouter();
   const { user, loading, logout } = useAuth();
-  const { isConnected, address: walletAddress, chainId } = useWalletContext();
 
-  const [collapsed, setCollapsed]       = useState(false);
-  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/");
@@ -119,68 +115,28 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           })}
         </nav>
 
-        {/* Browser wallet status pill */}
-        <div className={cn("px-2 pb-1", collapsed && "flex justify-center")}>
-          <Link
-            href="/admin/wallet"
-            className={cn(
-              "flex items-center gap-2 rounded-md border px-2.5 py-2 transition-colors",
-              isConnected
-                ? "border-yes/20 bg-yes/10 hover:bg-yes/15"
-                : "border-destructive/20 bg-destructive/10 hover:bg-destructive/15",
-              collapsed && "justify-center"
-            )}
-          >
-            {isConnected
-              ? <CheckCircle2 className="h-3.5 w-3.5 text-yes shrink-0" />
-              : <AlertCircle  className="h-3.5 w-3.5 text-destructive shrink-0" />
-            }
-            {!collapsed && (
-              <div className="flex-1 min-w-0">
-                <p className="text-[10px] text-muted-foreground leading-tight">Wallet</p>
-                <p className={cn("text-[10px] font-mono leading-tight truncate",
-                  isConnected ? "text-yes" : "text-destructive")}>
-                  {isConnected && walletAddress
-                    ? `${walletAddress.slice(0, 6)}…${walletAddress.slice(-4)}`
-                    : "Disconnected"}
-                </p>
-              </div>
-            )}
-          </Link>
-        </div>
-
         {/* User footer */}
         <div className="p-2 border-t border-border">
           {!collapsed ? (
-            <div className="relative">
+            <div className="flex items-center gap-2 rounded-md px-2.5 py-2">
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-brand text-primary-foreground text-[10px] font-bold shrink-0">
+                {initials}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-foreground truncate">{user.name}</p>
+                <p className="text-[10px] text-muted-foreground truncate">{user.email}</p>
+              </div>
               <button
-                onClick={() => setUserMenuOpen((v) => !v)}
-                className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 hover:bg-secondary transition-colors"
+                onClick={() => { logout(); router.replace("/"); }}
+                title="Log Out"
+                className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-secondary transition-colors shrink-0"
               >
-                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-brand text-primary-foreground text-[10px] font-bold shrink-0">
-                  {initials}
-                </div>
-                <div className="flex-1 min-w-0 text-left">
-                  <p className="text-xs font-semibold text-foreground truncate">{user.name}</p>
-                  <p className="text-[10px] text-muted-foreground truncate">{user.email}</p>
-                </div>
-                <ChevronDown className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform shrink-0", userMenuOpen && "rotate-180")} />
+                <LogOut className="h-3.5 w-3.5" />
               </button>
-              {userMenuOpen && (
-                <div className="absolute bottom-full left-0 right-0 mb-1 rounded-lg border border-border bg-card shadow-xl overflow-hidden">
-                  <button
-                    onClick={() => { logout(); router.replace("/admin/login"); }}
-                    className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-destructive hover:bg-destructive/10 transition-colors"
-                  >
-                    <LogOut className="h-4 w-4" />
-                    Log Out
-                  </button>
-                </div>
-              )}
             </div>
           ) : (
             <button
-              onClick={() => { logout(); router.replace("/admin/login"); }}
+              onClick={() => { logout(); router.replace("/"); }}
               className="flex w-full items-center justify-center p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-secondary transition-colors"
               title="Log Out"
             >
@@ -199,11 +155,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <span className="text-foreground font-medium">{breadcrumb}</span>
           </div>
           <div className="flex items-center gap-3">
+            {/* Markets home button */}
+            <Link
+              href="/"
+              className="flex items-center gap-1.5 rounded-lg border border-border bg-secondary/50 hover:bg-secondary px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Store className="h-3.5 w-3.5" />
+              <span>Markets</span>
+            </Link>
+
             <div className="flex items-center gap-1.5 rounded-md border border-yes/30 bg-yes/10 px-2.5 py-1">
               <CircleDot className="h-3 w-3 text-yes" />
               <span className="text-xs font-medium text-yes">Live</span>
             </div>
-            <AdminWalletConnect />
             <button className="relative flex h-8 w-8 items-center justify-center rounded-md border border-border hover:bg-secondary transition-colors">
               <Bell className="h-4 w-4 text-muted-foreground" />
             </button>

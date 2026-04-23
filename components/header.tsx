@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import {
   Search, SlidersHorizontal, TrendingUp, ChevronDown, X,
-  FlaskConical, Activity, Shield, LogOut, User, ChevronUp, Wallet,
+  FlaskConical, Activity, Shield, LogOut, User, ChevronUp, Wallet, LayoutDashboard,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -180,21 +180,33 @@ export function Header({ activeCategory = "", onCategoryChange, onSearch }: Head
 
           {/* Right actions */}
           <div className="flex shrink-0 items-center gap-2">
+            {user?.role === "merchant" && (
+              <Link href="/merchant">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="hidden sm:flex items-center gap-1.5 border-border font-semibold text-muted-foreground hover:text-foreground"
+                >
+                  <LayoutDashboard className="h-3.5 w-3.5" />
+                  Dashboard
+                </Button>
+              </Link>
+            )}
             {user?.role === "admin" && (
-            <Link href="/admin">
-              <Button
-                size="sm"
-                variant="outline"
-                className={cn(
-                  "hidden sm:flex items-center gap-1.5 border-border font-semibold",
-                  isAdmin ? "border-brand/50 text-brand bg-brand/10" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <Shield className="h-3.5 w-3.5" />
-                Admin
-              </Button>
-            </Link>
-          )}
+              <Link href="/admin">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className={cn(
+                    "hidden sm:flex items-center gap-1.5 border-border font-semibold",
+                    isAdmin ? "border-brand/50 text-brand bg-brand/10" : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <Shield className="h-3.5 w-3.5" />
+                  Admin
+                </Button>
+              </Link>
+            )}
             {user?.role === "admin" && (
               <>
                 <Link href="/economics">
@@ -266,26 +278,6 @@ export function Header({ activeCategory = "", onCategoryChange, onSearch }: Head
 
                         {/* Menu items */}
                         <div className="p-1">
-                          {user.role === "admin" && (
-                            <Link
-                              href="/admin"
-                              onClick={() => setUserMenuOpen(false)}
-                              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-                            >
-                              <Shield className="h-4 w-4" />
-                              Admin Panel
-                            </Link>
-                          )}
-                          {user.role === "merchant" && (
-                            <Link
-                              href="/merchant"
-                              onClick={() => setUserMenuOpen(false)}
-                              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-                            >
-                              <User className="h-4 w-4" />
-                              Dashboard
-                            </Link>
-                          )}
                           <button
                             onClick={() => {
                               logout();
