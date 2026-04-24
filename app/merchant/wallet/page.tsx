@@ -143,7 +143,7 @@ export default function MerchantWalletPage() {
           await fetch(`${API}/api/merchant/fund-requests/draft`, {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ amount: parseFloat(upiAmount), orderId }),
+            body: JSON.stringify({ amount: parseFloat(upiAmount), orderId, paymentMethod: "upi" }),
           });
         } catch {
           // silently fail — merchant can still submit a manual fund request
@@ -180,7 +180,7 @@ export default function MerchantWalletPage() {
     const orderRef = generateCardOrderRef();
     const redirectUrl =
       typeof window !== "undefined"
-        ? `${window.location.origin}/merchant/fund-requests`
+        ? `${window.location.origin}/merchant/fund-requests?card_ord=${orderRef}`
         : "https://google.com/";
 
     try {
@@ -218,7 +218,7 @@ export default function MerchantWalletPage() {
           await fetch(`${API}/api/merchant/fund-requests/draft`, {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ amount: amt, orderId: orderRef }),
+            body: JSON.stringify({ amount: amt, orderId: orderRef, paymentMethod: "card" }),
           });
         } catch {
           // silently fail — merchant can still submit a manual fund request

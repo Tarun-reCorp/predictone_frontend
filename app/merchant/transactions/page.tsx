@@ -4,8 +4,9 @@ import { useState, useEffect, useCallback } from "react";
 import {
   ArrowUpCircle, ArrowDownCircle, Receipt,
   ChevronLeft, ChevronRight, Loader2, X,
-  TrendingUp, TrendingDown, Activity,
+  TrendingUp, TrendingDown, Activity, Download,
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
 
@@ -53,6 +54,7 @@ export default function MerchantTransactionsPage() {
   const [dateFrom, setDateFrom]       = useState("");
   const [dateTo, setDateTo]           = useState("");
   const [datePreset, setDatePreset]   = useState<"all" | "today" | "week" | "month">("all");
+  const [exporting, setExporting]     = useState(false);
 
   const hasFilter = !!(typeFilter || dateFrom || dateTo);
 
@@ -79,6 +81,35 @@ export default function MerchantTransactionsPage() {
   const clearAll = () => {
     setTypeFilter(""); setDateFrom(""); setDateTo("");
     setDatePreset("all"); setPage(1);
+  };
+
+  const exportToExcel = async () => {
+    if (!token || exporting) return;
+    setExporting(true);
+    try {
+      const q = new URLSearchParams({ page: "1", limit: "5000" });
+      if (typeFilter) q.set("type", typeFilter);
+      if (dateFrom)   q.set("dateFrom", dateFrom);
+      if (dateTo)     q.set("dateTo",   dateTo);
+      const r = await fetch(`${BACKEND}/api/merchant/wallet/ledger?${q}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const d = await r.json();
+      const rows: WalletTx[] = d.data ?? d.docs ?? [];
+      const ws = XLSX.utils.json_to_sheet(rows.map((tx) => ({
+        Type:          TX_META[tx.type]?.label ?? tx.type,
+        Amount:        tx.amount,
+        "Balance After": tx.balanceAfter,
+        Description:   tx.description ?? "",
+        Date:          fmt(tx.createdAt),
+      })));
+      ws["!cols"] = [{ wch: 18 }, { wch: 12 }, { wch: 14 }, { wch: 40 }, { wch: 22 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Transactions");
+      XLSX.writeFile(wb, `transactions_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch { /* silent */ } finally {
+      setExporting(false);
+    }
   };
 
   const fetchTxns = useCallback((pg: number, type: string, from: string, to: string, signal?: AbortSignal) => {
@@ -116,16 +147,26 @@ export default function MerchantTransactionsPage() {
     <div className="flex flex-col gap-5 w-full">
 
       {/* ── Header ── */}
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand/15 shrink-0">
-          <Activity className="h-5 w-5 text-brand" />
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand/15 shrink-0">
+            <Activity className="h-5 w-5 text-brand" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-foreground tracking-tight">Transactions</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              {total > 0 ? `${total} total transactions` : "Your wallet transaction history"}
+            </p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">Transactions</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {total > 0 ? `${total} total transactions` : "Your wallet transaction history"}
-          </p>
-        </div>
+        <button
+          onClick={exportToExcel}
+          disabled={exporting || txns.length === 0}
+          className="flex items-center gap-2 rounded-lg border border-border bg-secondary/50 hover:bg-secondary px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors shrink-0"
+        >
+          {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          Export Excel
+        </button>
       </div>
 
       {/* ── Date presets + summary cards ── */}

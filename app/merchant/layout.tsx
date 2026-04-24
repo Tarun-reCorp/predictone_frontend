@@ -7,7 +7,7 @@ import {
   TrendingUp, LayoutDashboard, ChevronRight,
   CircleDot, Bell, LogOut,
   ShoppingBag, ArrowUpDown, Wallet, ArrowUpCircle, Receipt, HandCoins, ArrowDownCircle,
-  Store,
+  Store, User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";

@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   ArrowUpCircle, Clock, CheckCircle2, XCircle,
   ChevronLeft, ChevronRight, Loader2, Plus, X,
   Filter, CalendarClock, ListChecks, FileText,
-  QrCode, CreditCard, Bitcoin,
+  QrCode, CreditCard, Bitcoin, AlertTriangle, RefreshCw,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
@@ -56,12 +57,17 @@ function fmt(iso: string) {
 
 export default function FundRequestsPage() {
   const { token } = useAuth();
+  const searchParams = useSearchParams();
   const [requests, setRequests] = useState<FundRequest[]>([]);
   const [summary, setSummary]   = useState<Summary>({ approved: 0, pending: 0, rejected: 0, today: 0, total: 0 });
   const [loading, setLoading]   = useState(true);
   const [page, setPage]         = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [filterStatus, setFilterStatus] = useState("");
+  const [autoRejectMsg, setAutoRejectMsg] = useState<string | null>(null);
+  const [statusMsg, setStatusMsg] = useState<{ type: "success" | "error" | "warn"; text: string } | null>(null);
+  const [checkingId, setCheckingId] = useState<string | null>(null);
+  const cardCheckDone = useRef(false);
 
   // Form state
   const [showForm, setShowForm]   = useState(false);
@@ -75,7 +81,7 @@ export default function FundRequestsPage() {
 
   // UTR submission modal for draft requests
   const [utrModal, setUtrModal] = useState<{
-    requestId: string; value: string; loading: boolean; error: string;
+    requestId: string; orderId?: string; value: string; loading: boolean; error: string;
   } | null>(null);
 
   const load = useCallback(() => {
@@ -99,6 +105,60 @@ export default function FundRequestsPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // ── Card payment auto-reject on gateway redirect ──────────────────────────
+  // When card gateway redirects back with ?card_ord=CARD-xxx, check status
+  // and reject the matching draft fund request if payment was declined/failed.
+  useEffect(() => {
+    const cardOrd = searchParams.get("card_ord");
+    if (!cardOrd || !token || cardCheckDone.current) return;
+    cardCheckDone.current = true;
+
+    // Clean URL param without page reload
+    const url = new URL(window.location.href);
+    url.searchParams.delete("card_ord");
+    window.history.replaceState({}, "", url.toString());
+
+    (async () => {
+      try {
+        // 1. Check card payment status from gateway
+        const statusRes = await fetch(`${API}/api/payment/card/payin/status`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ order_ref_no: cardOrd }),
+        });
+        const statusData = await statusRes.json();
+        const gwStatus = (statusData?.status ?? statusData?.payment_status ?? "").toLowerCase();
+
+        // Only auto-reject on clear failure signals
+        if (!["failed", "declined", "failure", "cancelled", "cancel", "rejected"].includes(gwStatus)) return;
+
+        // 2. Find the matching fund request by orderId — draft OR pending
+        const listRes = await fetch(`${API}/api/merchant/fund-requests?limit=50`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const listData = await listRes.json();
+        const matched = (listData.data ?? []).find(
+          (r: FundRequest) => r.orderId === cardOrd && ["draft", "pending"].includes(r.status)
+        );
+        if (!matched) return;
+
+        // 3. Reject it with the gateway reason
+        const reason = statusData?.message || statusData?.description
+          || `Card payment ${gwStatus} by gateway (Order: ${cardOrd})`;
+        await fetch(`${API}/api/merchant/fund-requests/${matched._id}/reject-failed`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ reason }),
+        });
+
+        setAutoRejectMsg(`Card payment was ${gwStatus}: ${reason}`);
+        load();
+      } catch {
+        // silently ignore — don't block the page
+      }
+    })();
+  }, [searchParams, token, load]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(""); setFormSuccess("");
@@ -119,6 +179,81 @@ export default function FundRequestsPage() {
     } catch (err: unknown) {
       setFormError(err instanceof Error ? err.message : "Failed to submit");
     } finally { setSubmitting(false); }
+  };
+
+  // ── Check payment status with gateway → auto-approve or auto-reject ────────
+  const handleCheckStatus = async (req: FundRequest) => {
+    setCheckingId(req._id);
+    setStatusMsg(null);
+    setAutoRejectMsg(null);
+    try {
+      const res = await fetch(`${API}/api/merchant/fund-requests/${req._id}/check-and-settle`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message ?? "Status check failed");
+
+      const { action, gwStatus, reason } = data.data ?? {};
+
+      if (action === "approved") {
+        setStatusMsg({
+          type: "success",
+          text: `Payment confirmed (${gwStatus}) — wallet credited successfully!`,
+        });
+      } else if (action === "rejected") {
+        setStatusMsg({
+          type: "error",
+          text: `Payment ${gwStatus} — request rejected. Reason: ${reason}`,
+        });
+      } else {
+        setStatusMsg({
+          type: "warn",
+          text: `Payment status: "${gwStatus}" — still processing. Try again in a few minutes.`,
+        });
+      }
+      load();
+    } catch (err: unknown) {
+      setStatusMsg({
+        type: "error",
+        text: err instanceof Error ? err.message : "Status check failed",
+      });
+    } finally {
+      setCheckingId(null);
+    }
+  };
+
+  // Before showing UTR modal, check if UPI payment actually failed on the gateway.
+  // If failed → auto-reject the fund request and show reason.
+  // If success/pending or no orderId → open UTR modal normally.
+  const handleOpenUtrModal = async (req: FundRequest) => {
+    if (req.paymentMethod === "upi" && req.orderId) {
+      try {
+        const statusRes = await fetch(`${API}/api/payment/upi/payin/status`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ order_id: req.orderId }),
+        });
+        const statusData = await statusRes.json();
+        const gwStatus = (statusData?.status ?? "").toLowerCase();
+
+        if (["failed", "failure", "cancelled", "rejected", "declined"].includes(gwStatus)) {
+          const reason = statusData?.message || statusData?.description
+            || `UPI payment ${gwStatus} (Order: ${req.orderId})`;
+          await fetch(`${API}/api/merchant/fund-requests/${req._id}/reject-failed`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ reason }),
+          });
+          setAutoRejectMsg(`UPI payment failed: ${reason}`);
+          load();
+          return;
+        }
+      } catch {
+        // If status check fails, fall through to UTR modal — don't block the merchant
+      }
+    }
+    setUtrModal({ requestId: req._id, orderId: req.orderId, value: "", loading: false, error: "" });
   };
 
   const handlePaymentDone = async () => {
@@ -169,6 +304,43 @@ export default function FundRequestsPage() {
 
       {/* Summary cards */}
       <SummaryCards items={cards} />
+
+      {/* Auto-reject banner (card redirect) */}
+      {autoRejectMsg && (
+        <div className="flex items-start gap-3 rounded-xl border border-no/30 bg-no/10 px-4 py-3">
+          <AlertTriangle className="h-4 w-4 text-no shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-no">Payment Failed — Request Rejected</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{autoRejectMsg}</p>
+          </div>
+          <button onClick={() => setAutoRejectMsg(null)} className="text-muted-foreground hover:text-foreground">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Check-status result banner */}
+      {statusMsg && (
+        <div className={cn(
+          "flex items-start gap-3 rounded-xl border px-4 py-3",
+          statusMsg.type === "success" && "border-yes/30 bg-yes/10",
+          statusMsg.type === "error"   && "border-no/30 bg-no/10",
+          statusMsg.type === "warn"    && "border-chart-4/30 bg-chart-4/10",
+        )}>
+          {statusMsg.type === "success" && <CheckCircle2 className="h-4 w-4 text-yes shrink-0 mt-0.5" />}
+          {statusMsg.type === "error"   && <XCircle      className="h-4 w-4 text-no  shrink-0 mt-0.5" />}
+          {statusMsg.type === "warn"    && <Clock        className="h-4 w-4 text-chart-4 shrink-0 mt-0.5" />}
+          <p className={cn(
+            "flex-1 text-sm",
+            statusMsg.type === "success" && "text-yes",
+            statusMsg.type === "error"   && "text-no",
+            statusMsg.type === "warn"    && "text-chart-4",
+          )}>{statusMsg.text}</p>
+          <button onClick={() => setStatusMsg(null)} className="text-muted-foreground hover:text-foreground">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {/* New request modal */}
       {showForm && (
@@ -376,14 +548,31 @@ export default function FundRequestsPage() {
                         </td>
                         <td className={cn(TABLE.tdMuted, "whitespace-nowrap")}>{fmt(req.createdAt)}</td>
                         <td className={TABLE.td}>
-                          {req.status === "draft" && (
-                            <button
-                              onClick={() => setUtrModal({ requestId: req._id, value: "", loading: false, error: "" })}
-                              className="rounded-md bg-brand hover:bg-brand/90 text-primary-foreground text-xs font-semibold px-3 py-1.5 transition-colors whitespace-nowrap"
-                            >
-                              Payment Done
-                            </button>
-                          )}
+                          <div className="flex items-center gap-1.5">
+                            {req.status === "draft" && (
+                              <button
+                                onClick={() => handleOpenUtrModal(req)}
+                                className="rounded-md bg-brand hover:bg-brand/90 text-primary-foreground text-xs font-semibold px-3 py-1.5 transition-colors whitespace-nowrap"
+                              >
+                                Payment Done
+                              </button>
+                            )}
+                            {(req.paymentMethod === "upi" || req.paymentMethod === "card") &&
+                              req.orderId &&
+                              ["draft", "pending"].includes(req.status) && (
+                              <button
+                                onClick={() => handleCheckStatus(req)}
+                                disabled={checkingId === req._id}
+                                title="Check payment status with gateway"
+                                className="flex items-center gap-1 rounded-md border border-border bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground text-xs font-medium px-2.5 py-1.5 transition-colors whitespace-nowrap disabled:opacity-50"
+                              >
+                                {checkingId === req._id
+                                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                                  : <RefreshCw className="h-3 w-3" />}
+                                {checkingId === req._id ? "Checking…" : "Check Status"}
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );

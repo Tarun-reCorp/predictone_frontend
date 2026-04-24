@@ -159,9 +159,7 @@ export function FeaturedMarket({ market, onBuy, isLoggedIn, isPlacing, placeErro
             )}
           </button>
 
-          <p className="text-center text-xs text-muted-foreground">
-            Min $1 · Commission will be deducted from wallet
-          </p>
+      
         </div>
       </div>
     </div>
