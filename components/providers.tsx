@@ -47,19 +47,21 @@ const arbitrum = {
   rpcUrl: "https://arb1.arbitrum.io/rpc",
 };
 
-createWeb3Modal({
-  ethersConfig: defaultConfig({ metadata }),
-  chains: [ethereum, polygon, bsc, arbitrum],
-  projectId,
-  enableWalletConnect: true,
-  enableInjected: true,   // allow Trust Wallet extension too
-  enableEIP6963: true,    // allow EIP-6963 wallets (Trust Wallet extension)
-  enableCoinbase: false,
-  themeMode: "dark",
-  themeVariables: {
-    "--w3m-accent": "oklch(0.7 0.2 145)",
-  },
-});
+if (typeof window !== "undefined" && projectId) {
+  createWeb3Modal({
+    ethersConfig: defaultConfig({ metadata }),
+    chains: [ethereum, polygon, bsc, arbitrum],
+    projectId,
+    enableWalletConnect: true,
+    enableInjected: true,
+    enableEIP6963: true,
+    enableCoinbase: false,
+    themeMode: "dark",
+    themeVariables: {
+      "--w3m-accent": "oklch(0.7 0.2 145)",
+    },
+  });
+}
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
