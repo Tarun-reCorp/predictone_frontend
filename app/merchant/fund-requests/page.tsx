@@ -5,9 +5,10 @@ import { useSearchParams } from "next/navigation";
 import {
   ArrowUpCircle, Clock, CheckCircle2, XCircle,
   ChevronLeft, ChevronRight, Loader2, Plus, X,
-  Filter, CalendarClock, ListChecks, FileText,
+  CalendarClock, ListChecks, FileText, Download,
   QrCode, CreditCard, Bitcoin, AlertTriangle, RefreshCw,
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
 import { TABLE } from "@/lib/table-styles";
@@ -63,7 +64,14 @@ export default function FundRequestsPage() {
   const [loading, setLoading]   = useState(true);
   const [page, setPage]         = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [filterStatus, setFilterStatus] = useState("");
+  const [filterStatus, setFilterStatus]   = useState("");
+  const [filterMethod, setFilterMethod]   = useState("");
+  const [minAmount, setMinAmount]         = useState("");
+  const [maxAmount, setMaxAmount]         = useState("");
+  const [dateFrom, setDateFrom]           = useState("");
+  const [dateTo, setDateTo]               = useState("");
+  const [datePreset, setDatePreset]       = useState<"all"|"today"|"week"|"month">("all");
+  const [exporting, setExporting]         = useState(false);
   const [autoRejectMsg, setAutoRejectMsg] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<{ type: "success" | "error" | "warn"; text: string } | null>(null);
   const [checkingId, setCheckingId] = useState<string | null>(null);
@@ -88,7 +96,12 @@ export default function FundRequestsPage() {
     if (!token) return;
     setLoading(true);
     const q = new URLSearchParams({ page: String(page), limit: "15" });
-    if (filterStatus) q.set("status", filterStatus);
+    if (filterStatus) q.set("status",        filterStatus);
+    if (filterMethod) q.set("paymentMethod", filterMethod);
+    if (minAmount)    q.set("minAmount",     minAmount);
+    if (maxAmount)    q.set("maxAmount",     maxAmount);
+    if (dateFrom)     q.set("dateFrom",      dateFrom);
+    if (dateTo)       q.set("dateTo",        dateTo);
 
     Promise.all([
       fetch(`${API}/api/merchant/fund-requests?${q}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
@@ -101,9 +114,61 @@ export default function FundRequestsPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [token, page, filterStatus]);
+  }, [token, page, filterStatus, filterMethod, minAmount, maxAmount, dateFrom, dateTo]);
 
   useEffect(() => { load(); }, [load]);
+
+  const applyDatePreset = (preset: typeof datePreset) => {
+    setDatePreset(preset); setPage(1);
+    const today = new Date();
+    const toStr = (d: Date) => d.toISOString().slice(0, 10);
+    if (preset === "all")   { setDateFrom(""); setDateTo(""); }
+    else if (preset === "today") { setDateFrom(toStr(today)); setDateTo(toStr(today)); }
+    else if (preset === "week")  { const f = new Date(today); f.setDate(today.getDate()-6); setDateFrom(toStr(f)); setDateTo(toStr(today)); }
+    else if (preset === "month") { setDateFrom(toStr(new Date(today.getFullYear(), today.getMonth(), 1))); setDateTo(toStr(today)); }
+  };
+
+  const clearFilters = () => {
+    setFilterStatus(""); setFilterMethod(""); setMinAmount(""); setMaxAmount("");
+    setDateFrom(""); setDateTo(""); setDatePreset("all"); setPage(1);
+  };
+
+  const activeFilterCount = [filterStatus, filterMethod, minAmount, maxAmount, dateFrom, dateTo].filter(Boolean).length;
+
+  const exportToExcel = async () => {
+    if (!token) return;
+    setExporting(true);
+    try {
+      const q = new URLSearchParams({ page: "1", limit: "5000" });
+      if (filterStatus) q.set("status",        filterStatus);
+      if (filterMethod) q.set("paymentMethod", filterMethod);
+      if (minAmount)    q.set("minAmount",     minAmount);
+      if (maxAmount)    q.set("maxAmount",     maxAmount);
+      if (dateFrom)     q.set("dateFrom",      dateFrom);
+      if (dateTo)       q.set("dateTo",        dateTo);
+      const res  = await fetch(`${API}/api/merchant/fund-requests?${q}`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      const rows: FundRequest[] = data.data ?? [];
+      const sheet = rows.map((r, i) => ({
+        "#":          i + 1,
+        "Amount":     r.amount,
+        "Currency":   r.currency,
+        "Method":     r.paymentMethod ?? "manual",
+        "Order ID":   r.orderId ?? "—",
+        "UTR / Ref":  r.paymentReference ?? "—",
+        "Note":       r.merchantNote ?? "—",
+        "Status":     r.status,
+        "Admin Note": r.adminNote ?? "—",
+        "Date":       new Date(r.createdAt).toLocaleString("en-IN"),
+      }));
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(sheet);
+      ws["!cols"] = [{ wch: 4 }, { wch: 10 }, { wch: 8 }, { wch: 8 }, { wch: 30 }, { wch: 22 }, { wch: 20 }, { wch: 10 }, { wch: 30 }, { wch: 22 }];
+      XLSX.utils.book_append_sheet(wb, ws, "Fund Requests");
+      XLSX.writeFile(wb, `my_fund_requests_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch { /* silent */ }
+    finally { setExporting(false); }
+  };
 
   // ── Card payment auto-reject on gateway redirect ──────────────────────────
   // When card gateway redirects back with ?card_ord=CARD-xxx, check status
@@ -294,16 +359,96 @@ export default function FundRequestsPage() {
             Submit UTR / transaction references after paying to top-up your wallet.
           </p>
         </div>
-        <button
-          onClick={() => { setShowForm(true); setFormError(""); setFormSuccess(""); }}
-          className="flex items-center gap-2 rounded-lg bg-brand hover:bg-brand/90 text-primary-foreground font-semibold px-4 py-2 text-sm transition-colors"
-        >
-          <Plus className="h-4 w-4" /> New Request
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={exportToExcel}
+            disabled={exporting || requests.length === 0}
+            className="flex items-center gap-1.5 rounded-lg border border-border bg-secondary/50 hover:bg-secondary px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors"
+          >
+            {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            {exporting ? "Exporting…" : "Export"}
+          </button>
+          <button
+            onClick={() => { setShowForm(true); setFormError(""); setFormSuccess(""); }}
+            className="flex items-center gap-2 rounded-lg bg-brand hover:bg-brand/90 text-primary-foreground font-semibold px-4 py-2 text-sm transition-colors"
+          >
+            <Plus className="h-4 w-4" /> New Request
+          </button>
+        </div>
       </div>
 
-      {/* Summary cards */}
-      <SummaryCards items={cards} />
+      {/* Date presets + Summary cards */}
+      <div className="space-y-2.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {(["all", "today", "week", "month"] as const).map(p => {
+            const label = { all: "All Time", today: "Today", week: "Last 7 Days", month: "This Month" }[p];
+            return (
+              <button key={p} onClick={() => applyDatePreset(p)}
+                className={cn(
+                  "rounded-full px-3 py-1 text-xs font-medium border transition-colors",
+                  datePreset === p
+                    ? "bg-brand text-white border-brand"
+                    : "bg-secondary/50 text-muted-foreground border-border hover:text-foreground hover:bg-secondary"
+                )}>
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        <SummaryCards items={cards} />
+      </div>
+
+      {/* Filters */}
+      <div className="rounded-xl border border-border bg-card px-4 py-3">
+        <div className="flex flex-wrap gap-2">
+          {/* Method */}
+          <select value={filterMethod} onChange={e => { setFilterMethod(e.target.value); setPage(1); }}
+            className="rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 w-32">
+            <option value="">Method</option>
+            <option value="upi">UPI</option>
+            <option value="card">Card</option>
+            <option value="crypto">Crypto</option>
+            <option value="manual">Manual</option>
+          </select>
+
+          {/* Status */}
+          <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(1); }}
+            className="rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 w-36">
+            <option value="">All Status</option>
+            <option value="draft">Draft</option>
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+          </select>
+
+          {/* Amount range */}
+          <div className="flex items-center gap-1">
+            <input value={minAmount} onChange={e => { setMinAmount(e.target.value); setPage(1); }} type="number" min="0"
+              placeholder="Min ₹"
+              className="w-20 rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 transition-colors" />
+            <span className="text-muted-foreground text-xs">–</span>
+            <input value={maxAmount} onChange={e => { setMaxAmount(e.target.value); setPage(1); }} type="number" min="0"
+              placeholder="Max ₹"
+              className="w-20 rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 transition-colors" />
+          </div>
+
+          {/* Date range */}
+          <div className="flex items-center gap-1">
+            <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setDatePreset("all"); setPage(1); }}
+              className="rounded-md border border-border bg-secondary/40 px-2 h-8 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 transition-colors" />
+            <span className="text-muted-foreground text-xs">–</span>
+            <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setDatePreset("all"); setPage(1); }}
+              className="rounded-md border border-border bg-secondary/40 px-2 h-8 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 transition-colors" />
+          </div>
+
+          {activeFilterCount > 0 && (
+            <button onClick={clearFilters}
+              className="flex items-center gap-1 rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors whitespace-nowrap">
+              <X className="h-3 w-3" /> Clear ({activeFilterCount})
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* Auto-reject banner (card redirect) */}
       {autoRejectMsg && (
@@ -470,20 +615,6 @@ export default function FundRequestsPage() {
       <div className={TABLE.wrapper}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <p className="text-sm font-semibold text-foreground">Request History</p>
-          <div className="flex items-center gap-2">
-            <Filter className="h-3.5 w-3.5 text-muted-foreground" />
-            <select
-              value={filterStatus}
-              onChange={(e) => { setFilterStatus(e.target.value); setPage(1); }}
-              className="rounded-md border border-border bg-secondary text-xs text-foreground px-2.5 py-1.5 outline-none"
-            >
-              <option value="">All status</option>
-              <option value="draft">Draft</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="rejected">Rejected</option>
-            </select>
-          </div>
         </div>
         {loading ? (
           <div className="flex justify-center py-16"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
@@ -580,21 +711,19 @@ export default function FundRequestsPage() {
                 </tbody>
               </table>
             </div>
-            {totalPages > 1 && (
-              <div className={TABLE.footer}>
-                <span className="text-muted-foreground">Page <b>{page}</b> of <b>{totalPages}</b></span>
-                <div className="flex gap-2">
-                  <button onClick={() => setPage(p => p - 1)} disabled={page <= 1}
-                    className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors">
-                    <ChevronLeft className="h-3.5 w-3.5" /> Prev
-                  </button>
-                  <button onClick={() => setPage(p => p + 1)} disabled={page >= totalPages}
-                    className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors">
-                    Next <ChevronRight className="h-3.5 w-3.5" />
-                  </button>
-                </div>
+            <div className={TABLE.footer}>
+              <span className="text-xs text-muted-foreground">Page <b>{page}</b> of <b>{totalPages}</b></span>
+              <div className="flex gap-2">
+                <button onClick={() => setPage(p => p - 1)} disabled={page <= 1}
+                  className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors">
+                  <ChevronLeft className="h-3.5 w-3.5" /> Prev
+                </button>
+                <button onClick={() => setPage(p => p + 1)} disabled={page >= totalPages}
+                  className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors">
+                  Next <ChevronRight className="h-3.5 w-3.5" />
+                </button>
               </div>
-            )}
+            </div>
           </>
         )}
       </div>

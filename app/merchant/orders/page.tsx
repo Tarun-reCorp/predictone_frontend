@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   ShoppingBag, ChevronLeft, ChevronRight,
   Hash, DollarSign, CheckCheck, Timer, Loader2, Search, X, Download,
+  TrendingUp, TrendingDown, RotateCcw,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { useAuth } from "@/contexts/auth-context";
@@ -19,6 +20,8 @@ interface Order {
   outcome: "Yes" | "No";
   amount: number;
   price?: number;
+  payout?: number | null;
+  result?: "won" | "lost" | "refunded" | null;
   status: "pending" | "submitted" | "matched" | "settled" | "failed" | "cancelled";
   createdAt: string;
 }
@@ -152,20 +155,29 @@ export default function MerchantOrdersPage() {
       const data = await res.json();
       const rows: Order[] = data.docs ?? data.data ?? [];
 
-      const sheet = rows.map((o, i) => ({
-        "#":          i + 1,
-        "Order ID":   o.orderNumber ?? o._id.slice(-8).toUpperCase(),
-        "Market":     o.marketQuestion ?? o.conditionId,
-        "Outcome":    o.outcome,
-        "Amount ($)": o.amount,
-        "Status":     o.status,
-        "Date":       new Date(o.createdAt).toLocaleString("en-IN"),
-      }));
+      const sheet = rows.map((o, i) => {
+        const profit = o.result === "won"
+          ? parseFloat(((o.payout ?? 0) - o.amount).toFixed(2))
+          : o.result === "lost" ? -o.amount
+          : null;
+        return {
+          "#":           i + 1,
+          "Order ID":    o.orderNumber ?? o._id.slice(-8).toUpperCase(),
+          "Market":      o.marketQuestion ?? o.conditionId,
+          "Outcome":     o.outcome,
+          "Staked ($)":  o.amount,
+          "Payout ($)":  o.payout ?? "",
+          "P&L ($)":     profit ?? "",
+          "Result":      o.result ?? "",
+          "Status":      o.status,
+          "Date":        new Date(o.createdAt).toLocaleString("en-IN"),
+        };
+      });
 
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.json_to_sheet(sheet);
       ws["!cols"] = [
-        { wch: 5 }, { wch: 14 }, { wch: 44 }, { wch: 9 }, { wch: 12 }, { wch: 12 }, { wch: 22 },
+        { wch: 5 }, { wch: 14 }, { wch: 44 }, { wch: 9 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 22 },
       ];
       XLSX.utils.book_append_sheet(wb, ws, "My Orders");
       XLSX.writeFile(wb, `my_orders_${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -345,8 +357,9 @@ export default function MerchantOrdersPage() {
                     <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground w-12">#</th>
                     <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Order ID</th>
                     <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Market</th>
-                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Outcome</th>
-                    <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Amount</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Bet Placed</th>
+                    <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Staked</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Settlement & P&L</th>
                     <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Status</th>
                     <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Date</th>
                   </tr>
@@ -368,15 +381,22 @@ export default function MerchantOrdersPage() {
                         </p>
                       </td>
                       <td className="px-4 py-3">
-                        <span className={cn(
-                          "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold",
-                          o.outcome === "Yes" ? "bg-yes/15 text-yes" : "bg-no/15 text-no"
-                        )}>
-                          {o.outcome}
-                        </span>
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-[10px] text-muted-foreground/60 font-medium">Bought</span>
+                          <span className={cn(
+                            "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold w-fit",
+                            o.outcome === "Yes" ? "bg-yes/15 text-yes" : "bg-no/15 text-no"
+                          )}>
+                            {o.outcome === "Yes" ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                            {o.outcome}
+                          </span>
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <span className="text-sm font-semibold font-mono text-foreground">{fmtAmt(o.amount)}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <OrderResultCell order={o} />
                       </td>
                       <td className="px-4 py-3">
                         <span className={cn(
@@ -400,6 +420,82 @@ export default function MerchantOrdersPage() {
       </div>
     </div>
   );
+}
+
+function OrderResultCell({ order }: { order: Order }) {
+  if (order.status !== "settled") {
+    return <span className="text-xs text-muted-foreground/50">—</span>;
+  }
+
+  const { result, payout, amount, outcome } = order;
+
+  // Infer market resolution from bet + personal result
+  const marketResolved: "Yes" | "No" | null =
+    result === "won"      ? outcome :
+    result === "lost"     ? (outcome === "Yes" ? "No" : "Yes") :
+    null;
+
+  if (result === "won") {
+    const profit = parseFloat(((payout ?? 0) - amount).toFixed(2));
+    return (
+      <div className="flex flex-col gap-1">
+        {/* Win badge */}
+        <span className="inline-flex items-center gap-1 rounded-full bg-yes/15 text-yes px-2.5 py-1 text-xs font-bold w-fit">
+          <TrendingUp className="h-3 w-3" /> You Won
+        </span>
+        {/* Market resolved */}
+        <span className="text-[10px] text-muted-foreground pl-0.5">
+          Market resolved →{" "}
+          <span className="font-semibold text-yes">{marketResolved}</span>
+        </span>
+        {/* Payout */}
+        <span className="text-xs font-mono text-yes font-semibold pl-0.5">
+          Payout: +{fmtAmt(payout ?? 0)}{" "}
+          <span className="text-yes/70">(+{fmtAmt(profit)} profit)</span>
+        </span>
+      </div>
+    );
+  }
+
+  if (result === "lost") {
+    return (
+      <div className="flex flex-col gap-1">
+        {/* Loss badge */}
+        <span className="inline-flex items-center gap-1 rounded-full bg-no/15 text-no px-2.5 py-1 text-xs font-bold w-fit">
+          <TrendingDown className="h-3 w-3" /> You Lost
+        </span>
+        {/* Market resolved */}
+        <span className="text-[10px] text-muted-foreground pl-0.5">
+          Market resolved →{" "}
+          <span className="font-semibold text-no">{marketResolved}</span>
+        </span>
+        {/* Loss */}
+        <span className="text-xs font-mono text-no font-semibold pl-0.5">
+          Lost: -{fmtAmt(amount)}{" "}
+          <span className="text-no/70">(stake lost)</span>
+        </span>
+      </div>
+    );
+  }
+
+  if (result === "refunded") {
+    return (
+      <div className="flex flex-col gap-1">
+        <span className="inline-flex items-center gap-1 rounded-full bg-muted-foreground/15 text-muted-foreground px-2.5 py-1 text-xs font-bold w-fit">
+          <RotateCcw className="h-3 w-3" /> Refunded
+        </span>
+        <span className="text-[10px] text-muted-foreground pl-0.5">
+          Market cancelled / Draw
+        </span>
+        <span className="text-xs font-mono text-muted-foreground font-semibold pl-0.5">
+          Returned: {fmtAmt(payout ?? amount)}
+        </span>
+      </div>
+    );
+  }
+
+  // Old settled orders before result field was added
+  return <span className="text-xs text-muted-foreground/50">Settled</span>;
 }
 
 function SummaryCard({ icon: Icon, label, value, accent, bg, sub }: {

@@ -5,13 +5,12 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { CheckCircle2, Loader2, TrendingUp, TrendingDown, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type Phase = "confirm" | "loading" | "success" | "error";
+type Phase = "loading" | "success" | "error";
 
 interface OrderSuccessModalProps {
   open: boolean;
   onClose: () => void;
-  onConfirm: () => void;       // called when user clicks Confirm
-  isPlacing: boolean;          // true while API call is in-flight
+  isPlacing: boolean;
   outcome: "Yes" | "No" | null;
   amount: number;
   error?: string | null;
@@ -20,89 +19,31 @@ interface OrderSuccessModalProps {
 export function OrderSuccessModal({
   open,
   onClose,
-  onConfirm,
   isPlacing,
   outcome,
   amount,
   error,
 }: OrderSuccessModalProps) {
-  const [phase, setPhase] = useState<Phase>("confirm");
+  const [phase, setPhase] = useState<Phase>("loading");
   const isYes = outcome === "Yes";
 
-  // Reset to confirm whenever modal opens
+  // When modal first opens: if order is already done, skip loading phase immediately
   useEffect(() => {
-    if (open) setPhase("confirm");
-  }, [open]);
-
-  // React to isPlacing / error changes after confirm is clicked
-  useEffect(() => {
-    if (phase === "loading") {
-      if (!isPlacing && error)  setPhase("error");
-      if (!isPlacing && !error) setPhase("success");
+    if (open) {
+      setPhase(isPlacing ? "loading" : error ? "error" : "success");
     }
-  }, [isPlacing, error, phase]);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleConfirm = () => {
-    setPhase("loading");
-    onConfirm();
-  };
+  // When order finishes while modal is open: transition to result
+  useEffect(() => {
+    if (!open || isPlacing) return;
+    setPhase(error ? "error" : "success");
+  }, [isPlacing, error, open]);
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v && phase !== "loading") onClose(); }}>
       <DialogContent className="max-w-xs p-0 overflow-hidden border border-border bg-card">
         <div className="p-6 flex flex-col items-center gap-4 text-center">
-
-          {/* ── Confirm ── */}
-          {phase === "confirm" && (
-            <>
-              <div className={cn(
-                "flex h-14 w-14 items-center justify-center rounded-full",
-                isYes ? "bg-yes/15" : "bg-no/15"
-              )}>
-                {isYes
-                  ? <TrendingUp className="h-7 w-7 text-yes" />
-                  : <TrendingDown className="h-7 w-7 text-no" />}
-              </div>
-
-              <div>
-                <p className="text-base font-bold text-foreground">Confirm Order</p>
-                <p className="text-xs text-muted-foreground mt-1">Review your order before placing</p>
-              </div>
-
-              <div className="w-full rounded-lg border border-border bg-secondary/50 divide-y divide-border/50 text-xs">
-                <div className="flex items-center justify-between px-3 py-2.5">
-                  <span className="text-muted-foreground">Outcome</span>
-                  <span className={cn("font-semibold", isYes ? "text-yes" : "text-no")}>{outcome}</span>
-                </div>
-                <div className="flex items-center justify-between px-3 py-2.5">
-                  <span className="text-muted-foreground">Amount</span>
-                  <span className="font-mono font-semibold text-foreground">${amount.toFixed(2)}</span>
-                </div>
-                <div className="flex items-center justify-between px-3 py-2.5">
-                  <span className="text-muted-foreground">Commission</span>
-                  <span className="text-muted-foreground">As per rule</span>
-                </div>
-              </div>
-
-              <div className="w-full flex gap-2">
-                <button
-                  onClick={onClose}
-                  className="flex-1 rounded-lg border border-border bg-secondary hover:bg-secondary/80 text-foreground font-semibold py-2.5 text-sm transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleConfirm}
-                  className={cn(
-                    "flex-1 rounded-lg font-semibold py-2.5 text-sm transition-colors text-white",
-                    isYes ? "bg-yes hover:bg-yes/90" : "bg-no hover:bg-no/90"
-                  )}
-                >
-                  Confirm
-                </button>
-              </div>
-            </>
-          )}
 
           {/* ── Loading ── */}
           {phase === "loading" && (

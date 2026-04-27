@@ -83,7 +83,7 @@ export function FeaturedMarket({ market, onBuy, isLoggedIn, isPlacing, placeErro
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
-              {hasVolume ? `Yes $${(yesPct / 100).toFixed(2)}` : "Yes $0.50"}
+              {`Yes ${yesPct}%`}
             </button>
             <button
               onClick={() => setTradeType("no")}
@@ -94,7 +94,7 @@ export function FeaturedMarket({ market, onBuy, isLoggedIn, isPlacing, placeErro
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
-              {hasVolume ? `No $${((100 - yesPct) / 100).toFixed(2)}` : "No $0.50"}
+              {`No ${100 - yesPct}%`}
             </button>
           </div>
 

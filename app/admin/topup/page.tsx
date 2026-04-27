@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback } from "react";
 import {
   HandCoins, Search, Loader2, DollarSign, ArrowUpCircle, ArrowDownCircle, X,
-  ChevronLeft, ChevronRight, RefreshCw, Filter,
+  ChevronLeft, ChevronRight, Download,
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
 
@@ -69,8 +70,14 @@ export default function TopupPage() {
   const [histPage, setHistPage]         = useState(1);
   const [histTotalPages, setHistTotalPages] = useState(1);
   const [histTotal, setHistTotal]       = useState(0);
-  const [histFilter, setHistFilter]     = useState("");
-  const [histMerchant, setHistMerchant] = useState("");
+  const [histFilter, setHistFilter]         = useState("");
+  const [histMerchant, setHistMerchant]     = useState("");
+  const [histMinAmt, setHistMinAmt]         = useState("");
+  const [histMaxAmt, setHistMaxAmt]         = useState("");
+  const [histDateFrom, setHistDateFrom]     = useState("");
+  const [histDateTo, setHistDateTo]         = useState("");
+  const [histDatePreset, setHistDatePreset] = useState<"all"|"today"|"week"|"month">("all");
+  const [exporting, setExporting]           = useState(false);
 
   const fetchMerchants = useCallback(async () => {
     if (!token) return;
@@ -82,21 +89,75 @@ export default function TopupPage() {
     } catch {} finally { setLoading(false); }
   }, [token]);
 
+  const buildHistParams = (extra: Record<string,string> = {}) => {
+    const p = new URLSearchParams(extra);
+    if (histFilter)   p.set("type",       histFilter);
+    if (histMerchant) p.set("merchantId", histMerchant);
+    if (histMinAmt)   p.set("minAmount",  histMinAmt);
+    if (histMaxAmt)   p.set("maxAmount",  histMaxAmt);
+    if (histDateFrom) p.set("dateFrom",   histDateFrom);
+    if (histDateTo)   p.set("dateTo",     histDateTo);
+    return p;
+  };
+
   const fetchHistory = useCallback(async () => {
     if (!token) return;
     setHistLoading(true);
     try {
-      const params = new URLSearchParams({ page: String(histPage), limit: "15" });
-      if (histFilter) params.set("type", histFilter);
-      if (histMerchant) params.set("merchantId", histMerchant);
-
+      const params = buildHistParams({ page: String(histPage), limit: "15" });
       const res = await fetch(`${API}/api/admin/topup-history?${params}`, { headers: { Authorization: `Bearer ${token}` } });
       const json = await res.json();
       setHistory(json.data ?? []);
       setHistTotal(json.meta?.total ?? 0);
       setHistTotalPages(json.meta?.totalPages ?? 1);
     } catch {} finally { setHistLoading(false); }
-  }, [token, histPage, histFilter, histMerchant]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, histPage, histFilter, histMerchant, histMinAmt, histMaxAmt, histDateFrom, histDateTo]);
+
+  const applyDatePreset = (preset: typeof histDatePreset) => {
+    setHistDatePreset(preset); setHistPage(1);
+    const today = new Date();
+    const s = (d: Date) => d.toISOString().slice(0, 10);
+    if (preset === "all")   { setHistDateFrom(""); setHistDateTo(""); }
+    else if (preset === "today") { setHistDateFrom(s(today)); setHistDateTo(s(today)); }
+    else if (preset === "week")  { const f = new Date(today); f.setDate(today.getDate()-6); setHistDateFrom(s(f)); setHistDateTo(s(today)); }
+    else if (preset === "month") { setHistDateFrom(s(new Date(today.getFullYear(), today.getMonth(), 1))); setHistDateTo(s(today)); }
+  };
+
+  const clearHistFilters = () => {
+    setHistFilter(""); setHistMerchant(""); setHistMinAmt(""); setHistMaxAmt("");
+    setHistDateFrom(""); setHistDateTo(""); setHistDatePreset("all"); setHistPage(1);
+  };
+
+  const activeHistFilters = [histFilter, histMerchant, histMinAmt, histMaxAmt, histDateFrom, histDateTo].filter(Boolean).length;
+
+  const exportToExcel = async () => {
+    if (!token) return;
+    setExporting(true);
+    try {
+      const params = buildHistParams({ page: "1", limit: "5000" });
+      const res  = await fetch(`${API}/api/admin/topup-history?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+      const json = await res.json();
+      const rows: TopupRecord[] = json.data ?? [];
+      const sheet = rows.map((r, i) => ({
+        "#":              i + 1,
+        "Merchant":       r.merchantId?.name ?? "—",
+        "Email":          r.merchantId?.email ?? "—",
+        "Type":           r.type,
+        "Amount ($)":     r.amount,
+        "Balance Before": r.balanceBefore,
+        "Balance After":  r.balanceAfter,
+        "Description":    r.description || "—",
+        "By":             (r.performedBy as { name?: string } | null)?.name ?? "—",
+        "Date":           new Date(r.createdAt).toLocaleString("en-IN"),
+      }));
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(sheet);
+      ws["!cols"] = [{ wch: 4 }, { wch: 20 }, { wch: 26 }, { wch: 8 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 30 }, { wch: 16 }, { wch: 22 }];
+      XLSX.utils.book_append_sheet(wb, ws, "Topup History");
+      XLSX.writeFile(wb, `topup_history_${new Date().toISOString().slice(0,10)}.xlsx`);
+    } catch {} finally { setExporting(false); }
+  };
 
   useEffect(() => { fetchMerchants(); }, [fetchMerchants]);
   useEffect(() => { fetchHistory(); }, [fetchHistory]);
@@ -240,38 +301,86 @@ export default function TopupPage() {
       </div>
 
       {/* ── Topup History ── */}
+      <div className="flex flex-col gap-3">
+
+        {/* Date presets */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {(["all", "today", "week", "month"] as const).map(p => {
+            const label = { all: "All Time", today: "Today", week: "Last 7 Days", month: "This Month" }[p];
+            return (
+              <button key={p} onClick={() => applyDatePreset(p)}
+                className={cn(
+                  "rounded-full px-3 py-1 text-xs font-medium border transition-colors",
+                  histDatePreset === p
+                    ? "bg-brand text-white border-brand"
+                    : "bg-secondary/50 text-muted-foreground border-border hover:text-foreground hover:bg-secondary"
+                )}>
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Filter bar */}
+        <div className="rounded-xl border border-border bg-card px-4 py-3">
+          <div className="flex flex-wrap gap-2">
+            {/* Merchant filter */}
+            <select value={histMerchant} onChange={e => { setHistMerchant(e.target.value); setHistPage(1); }}
+              className="rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 min-w-[140px]">
+              <option value="">All Merchants</option>
+              {merchants.map(m => <option key={m._id} value={m._id}>{m.name}</option>)}
+            </select>
+
+            {/* Type */}
+            <select value={histFilter} onChange={e => { setHistFilter(e.target.value); setHistPage(1); }}
+              className="rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 w-32">
+              {FILTER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+
+            {/* Amount range */}
+            <div className="flex items-center gap-1">
+              <input value={histMinAmt} onChange={e => { setHistMinAmt(e.target.value); setHistPage(1); }} type="number" min="0"
+                placeholder="Min $"
+                className="w-20 rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 transition-colors" />
+              <span className="text-muted-foreground text-xs">–</span>
+              <input value={histMaxAmt} onChange={e => { setHistMaxAmt(e.target.value); setHistPage(1); }} type="number" min="0"
+                placeholder="Max $"
+                className="w-20 rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 transition-colors" />
+            </div>
+
+            {/* Date range */}
+            <div className="flex items-center gap-1">
+              <input type="date" value={histDateFrom} onChange={e => { setHistDateFrom(e.target.value); setHistDatePreset("all"); setHistPage(1); }}
+                className="rounded-md border border-border bg-secondary/40 px-2 h-8 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 transition-colors" />
+              <span className="text-muted-foreground text-xs">–</span>
+              <input type="date" value={histDateTo} onChange={e => { setHistDateTo(e.target.value); setHistDatePreset("all"); setHistPage(1); }}
+                className="rounded-md border border-border bg-secondary/40 px-2 h-8 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 transition-colors" />
+            </div>
+
+            {/* Export */}
+            <button onClick={exportToExcel} disabled={exporting || histTotal === 0}
+              className="flex items-center gap-1.5 rounded-md border border-border bg-secondary/40 hover:bg-secondary px-2.5 h-8 text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors whitespace-nowrap">
+              {exporting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+              {exporting ? "Exporting…" : "Export"}
+            </button>
+
+            {activeHistFilters > 0 && (
+              <button onClick={clearHistFilters}
+                className="flex items-center gap-1 rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors whitespace-nowrap">
+                <X className="h-3 w-3" /> Clear ({activeHistFilters})
+              </button>
+            )}
+          </div>
+        </div>
+
       <div className="rounded-xl border border-border bg-card overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-border">
           <div className="flex items-center gap-2">
             <HandCoins className="h-4 w-4 text-brand" />
             <h2 className="text-sm font-semibold text-foreground">Topup History</h2>
             {histTotal > 0 && (
               <span className="rounded-full bg-brand/20 text-brand text-xs font-bold px-2 py-0.5">{histTotal}</span>
             )}
-          </div>
-          <div className="flex items-center gap-2">
-            {/* Type filter */}
-            <select
-              value={histFilter}
-              onChange={e => { setHistFilter(e.target.value); setHistPage(1); }}
-              className="rounded-lg border border-border bg-secondary px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-brand/50"
-            >
-              {FILTER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-
-            {/* Merchant filter */}
-            <select
-              value={histMerchant}
-              onChange={e => { setHistMerchant(e.target.value); setHistPage(1); }}
-              className="rounded-lg border border-border bg-secondary px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-brand/50 max-w-[160px]"
-            >
-              <option value="">All Merchants</option>
-              {merchants.map(m => <option key={m._id} value={m._id}>{m.name}</option>)}
-            </select>
-
-            <button onClick={fetchHistory} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border hover:bg-secondary transition-colors">
-              <RefreshCw className={cn("h-3.5 w-3.5 text-muted-foreground", histLoading && "animate-spin")} />
-            </button>
           </div>
         </div>
 
@@ -330,26 +439,24 @@ export default function TopupPage() {
               </table>
             </div>
 
-            {/* Pagination */}
-            {histTotalPages > 1 && (
-              <div className="flex items-center justify-between px-5 py-3 border-t border-border">
-                <span className="text-xs text-muted-foreground">
-                  Page <b>{histPage}</b> of <b>{histTotalPages}</b> ({histTotal} records)
-                </span>
-                <div className="flex items-center gap-1">
-                  <button onClick={() => setHistPage(p => p - 1)} disabled={histPage <= 1}
-                    className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-40 transition-colors">
-                    <ChevronLeft className="h-3.5 w-3.5" /> Prev
-                  </button>
-                  <button onClick={() => setHistPage(p => p + 1)} disabled={histPage >= histTotalPages}
-                    className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-40 transition-colors">
-                    Next <ChevronRight className="h-3.5 w-3.5" />
-                  </button>
-                </div>
+            <div className="flex items-center justify-between px-5 py-3 border-t border-border">
+              <span className="text-xs text-muted-foreground">
+                Page <b>{histPage}</b> of <b>{histTotalPages}</b> &mdash; {histTotal} records
+              </span>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setHistPage(p => p - 1)} disabled={histPage <= 1}
+                  className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-40 transition-colors">
+                  <ChevronLeft className="h-3.5 w-3.5" /> Prev
+                </button>
+                <button onClick={() => setHistPage(p => p + 1)} disabled={histPage >= histTotalPages}
+                  className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-40 transition-colors">
+                  Next <ChevronRight className="h-3.5 w-3.5" />
+                </button>
               </div>
-            )}
+            </div>
           </>
         )}
+      </div>
       </div>
     </div>
   );

@@ -54,29 +54,25 @@ export default function MarketPage() {
     setBuyModalOpen(true);
   };
 
-  // Step 1: open confirmation modal (no API call yet)
-  const handleFeaturedBuy = (outcome: "Yes" | "No", amount: number) => {
+  // Direct buy — opens modal first so it can observe isPlacing true→false transition
+  const handleFeaturedBuy = async (outcome: "Yes" | "No", amount: number) => {
     if (!isLoggedIn) {
       setAuthModal({ open: true, tab: "login" });
       return;
     }
     if (!market) return;
     clearFeaturedError();
+    // Open modal BEFORE placing so OrderSuccessModal sees isPlacing go true→false
     setSuccessModal({ open: true, outcome, amount });
-  };
-
-  // Step 2: user confirmed — now place the order
-  const handleConfirmOrder = async () => {
-    if (!market) return;
     try {
       await placeOrder({
         marketId: market.id || market.conditionId,
-        outcome: successModal.outcome!,
-        amount: successModal.amount,
+        outcome,
+        amount,
         marketQuestion: market.question,
       });
     } catch {
-      // error surfaced via featuredError → modal shows error phase
+      // error captured by useOrder; modal transitions to error phase automatically
     }
   };
 
@@ -317,11 +313,10 @@ export default function MarketPage() {
         />
       )}
 
-      {/* ── Order Confirm / Success Modal ── */}
+      {/* ── Order Success / Error Modal ── */}
       <OrderSuccessModal
         open={successModal.open}
         onClose={() => setSuccessModal((s) => ({ ...s, open: false }))}
-        onConfirm={handleConfirmOrder}
         isPlacing={isFeaturedPlacing}
         outcome={successModal.outcome}
         amount={successModal.amount}

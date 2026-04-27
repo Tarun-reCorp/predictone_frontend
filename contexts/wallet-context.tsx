@@ -17,29 +17,35 @@ import {
 import { BrowserProvider, formatEther } from "ethers";
 
 interface WalletState {
-  /** Whether a wallet is currently connected */
   isConnected: boolean;
-  /** Connected wallet address (checksummed) */
   address: string | null;
-  /** Chain ID the wallet is on */
   chainId: number | null;
-  /** ETH/native balance (formatted string) */
   balance: string | null;
-  /** Loading balance or processing action */
   loading: boolean;
-  /** Open web3modal to connect */
   connect: () => void;
-  /** Disconnect wallet */
   disconnect: () => Promise<void>;
-  /** Open web3modal to switch wallet */
   changeWallet: () => void;
-  /** Refresh balance */
   refreshBalance: () => Promise<void>;
 }
 
-const WalletContext = createContext<WalletState | null>(null);
+const noop = async () => {};
 
-export function WalletProvider({ children }: { children: ReactNode }) {
+const defaultState: WalletState = {
+  isConnected: false,
+  address: null,
+  chainId: null,
+  balance: null,
+  loading: false,
+  connect: () => {},
+  disconnect: noop,
+  changeWallet: () => {},
+  refreshBalance: noop,
+};
+
+const WalletContext = createContext<WalletState>(defaultState);
+
+// Inner component — only mounts on client, safe to call Web3Modal hooks
+function WalletProviderInner({ children }: { children: ReactNode }) {
   const { open } = useWeb3Modal();
   const { address, chainId, isConnected } = useWeb3ModalAccount();
   const { disconnect: w3Disconnect } = useDisconnect();
@@ -49,10 +55,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(false);
 
   const refreshBalance = useCallback(async () => {
-    if (!walletProvider || !address) {
-      setBalance(null);
-      return;
-    }
+    if (!walletProvider || !address) { setBalance(null); return; }
     try {
       setLoading(true);
       const provider = new BrowserProvider(walletProvider);
@@ -65,49 +68,49 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }
   }, [walletProvider, address]);
 
-  // Auto-fetch balance on connect / chain change
   useEffect(() => {
-    if (isConnected && address) {
-      refreshBalance();
-    } else {
-      setBalance(null);
-    }
+    if (isConnected && address) refreshBalance();
+    else setBalance(null);
   }, [isConnected, address, chainId, refreshBalance]);
 
-  const connect = useCallback(() => {
-    open();
-  }, [open]);
-
-  const disconnect = useCallback(async () => {
-    await w3Disconnect();
-    setBalance(null);
-  }, [w3Disconnect]);
-
-  const changeWallet = useCallback(() => {
-    open();
-  }, [open]);
+  const connect      = useCallback(() => open(), [open]);
+  const disconnect   = useCallback(async () => { await w3Disconnect(); setBalance(null); }, [w3Disconnect]);
+  const changeWallet = useCallback(() => open(), [open]);
 
   return (
-    <WalletContext.Provider
-      value={{
-        isConnected,
-        address: address ?? null,
-        chainId: chainId ?? null,
-        balance,
-        loading,
-        connect,
-        disconnect,
-        changeWallet,
-        refreshBalance,
-      }}
-    >
+    <WalletContext.Provider value={{
+      isConnected,
+      address: address ?? null,
+      chainId: chainId ?? null,
+      balance,
+      loading,
+      connect,
+      disconnect,
+      changeWallet,
+      refreshBalance,
+    }}>
       {children}
     </WalletContext.Provider>
   );
 }
 
+// Outer provider — SSR safe, renders default state until client mounts
+export function WalletProvider({ children }: { children: ReactNode }) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => { setMounted(true); }, []);
+
+  if (!mounted) {
+    return (
+      <WalletContext.Provider value={defaultState}>
+        {children}
+      </WalletContext.Provider>
+    );
+  }
+
+  return <WalletProviderInner>{children}</WalletProviderInner>;
+}
+
 export function useWalletContext() {
-  const ctx = useContext(WalletContext);
-  if (!ctx) throw new Error("useWalletContext must be used inside WalletProvider");
-  return ctx;
+  return useContext(WalletContext);
 }

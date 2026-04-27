@@ -3,9 +3,10 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   ArrowUpCircle, Clock, CheckCircle2, XCircle,
-  ChevronLeft, ChevronRight, Loader2, Filter,
+  ChevronLeft, ChevronRight, Loader2, Search, X, Download,
   CalendarClock, ListChecks, QrCode, CreditCard, Bitcoin, FileText,
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
 import { TABLE } from "@/lib/table-styles";
@@ -30,12 +31,23 @@ interface FundRequest {
 }
 
 interface Summary {
-  approved: number;
-  pending: number;
-  rejected: number;
-  today: number;
-  total: number;
+  approved: number; pending: number; rejected: number; today: number; total: number;
 }
+
+interface Filters {
+  merchantSearch: string;
+  paymentMethod:  string;
+  status:         string;
+  minAmount:      string;
+  maxAmount:      string;
+  dateFrom:       string;
+  dateTo:         string;
+}
+
+const EMPTY: Filters = {
+  merchantSearch: "", paymentMethod: "", status: "",
+  minAmount: "", maxAmount: "", dateFrom: "", dateTo: "",
+};
 
 const STATUS_STYLE = {
   pending:  { label: "Pending",  color: "text-chart-4", bg: "bg-chart-4/15", icon: Clock        },
@@ -51,17 +63,35 @@ const PM_STYLE = {
 };
 
 function fmt(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+}
+
+function buildParams(f: Filters, extra: Record<string, string> = {}) {
+  const q = new URLSearchParams(extra);
+  if (f.merchantSearch) q.set("merchantSearch", f.merchantSearch);
+  if (f.paymentMethod)  q.set("paymentMethod",  f.paymentMethod);
+  if (f.status)         q.set("status",         f.status);
+  if (f.minAmount)      q.set("minAmount",       f.minAmount);
+  if (f.maxAmount)      q.set("maxAmount",       f.maxAmount);
+  if (f.dateFrom)       q.set("dateFrom",        f.dateFrom);
+  if (f.dateTo)         q.set("dateTo",          f.dateTo);
+  return q;
 }
 
 export default function AdminFundRequestsPage() {
   const { token } = useAuth();
-  const [requests, setRequests] = useState<FundRequest[]>([]);
-  const [summary, setSummary]   = useState<Summary>({ approved: 0, pending: 0, rejected: 0, today: 0, total: 0 });
-  const [loading, setLoading]   = useState(true);
-  const [page, setPage]         = useState(1);
+
+  const [requests, setRequests]     = useState<FundRequest[]>([]);
+  const [summary, setSummary]       = useState<Summary>({ approved: 0, pending: 0, rejected: 0, today: 0, total: 0 });
+  const [loading, setLoading]       = useState(true);
+  const [page, setPage]             = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [filterStatus, setFilterStatus] = useState("");
+  const [total, setTotal]           = useState(0);
+  const [filters, setFilters]       = useState<Filters>(EMPTY);
+  const [datePreset, setDatePreset] = useState<"all" | "today" | "week" | "month">("all");
+  const [exporting, setExporting]   = useState(false);
 
   // Review modal
   const [reviewing, setReviewing]     = useState<FundRequest | null>(null);
@@ -70,26 +100,60 @@ export default function AdminFundRequestsPage() {
   const [submitting, setSubmitting]   = useState(false);
   const [reviewError, setReviewError] = useState("");
 
-  const load = useCallback(() => {
+  const activeCount = Object.values(filters).filter(v => v !== "").length;
+
+  const applyDatePreset = (preset: typeof datePreset) => {
+    setDatePreset(preset);
+    setPage(1);
+    const today = new Date();
+    const toStr = (d: Date) => d.toISOString().slice(0, 10);
+    if (preset === "all") {
+      setFilters(f => ({ ...f, dateFrom: "", dateTo: "" }));
+    } else if (preset === "today") {
+      const s = toStr(today);
+      setFilters(f => ({ ...f, dateFrom: s, dateTo: s }));
+    } else if (preset === "week") {
+      const from = new Date(today); from.setDate(today.getDate() - 6);
+      setFilters(f => ({ ...f, dateFrom: toStr(from), dateTo: toStr(today) }));
+    } else if (preset === "month") {
+      const from = new Date(today.getFullYear(), today.getMonth(), 1);
+      setFilters(f => ({ ...f, dateFrom: toStr(from), dateTo: toStr(today) }));
+    }
+  };
+
+  const fetchData = useCallback((pageNum: number, f: Filters, signal?: AbortSignal) => {
     if (!token) return;
     setLoading(true);
-    const q = new URLSearchParams({ page: String(page), limit: "15" });
-    if (filterStatus) q.set("status", filterStatus);
+    const q = buildParams(f, { page: String(pageNum), limit: "15" });
 
     Promise.all([
-      fetch(`${API}/api/admin/fund-requests?${q}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+      fetch(`${API}/api/admin/fund-requests?${q}`, { headers: { Authorization: `Bearer ${token}` }, signal }).then(r => r.json()),
       fetch(`${API}/api/admin/fund-requests/summary`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
     ])
       .then(([list, sum]) => {
         setRequests(list.data ?? []);
         setTotalPages(list.meta?.totalPages ?? 1);
+        setTotal(list.meta?.total ?? 0);
         if (sum?.data) setSummary(sum.data);
       })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [token, page, filterStatus]);
+      .catch(err => { if (err.name !== "AbortError") setRequests([]); })
+      .finally(() => { if (!signal?.aborted) setLoading(false); });
+  }, [token]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const controller = new AbortController();
+    const t = setTimeout(() => fetchData(page, filters, controller.signal), 400);
+    return () => { clearTimeout(t); controller.abort(); };
+  }, [page, filters, fetchData]);
+
+  const set = (key: keyof Filters) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+      setPage(1);
+      if (key === "dateFrom" || key === "dateTo") setDatePreset("all");
+      setFilters(f => ({ ...f, [key]: e.target.value }));
+    };
+
+  const clearAll = () => { setFilters(EMPTY); setPage(1); setDatePreset("all"); };
 
   const handleReview = async () => {
     if (!reviewing) return;
@@ -102,10 +166,46 @@ export default function AdminFundRequestsPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message ?? "Failed");
-      setReviewing(null); setAdminNote(""); load();
+      setReviewing(null); setAdminNote("");
+      fetchData(page, filters);
     } catch (err: unknown) {
       setReviewError(err instanceof Error ? err.message : "Failed");
     } finally { setSubmitting(false); }
+  };
+
+  const exportToExcel = async () => {
+    if (!token) return;
+    setExporting(true);
+    try {
+      const q = buildParams(filters, { page: "1", limit: "5000" });
+      const res  = await fetch(`${API}/api/admin/fund-requests?${q}`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      const rows: FundRequest[] = data.data ?? [];
+
+      const sheet = rows.map((r, i) => ({
+        "#":           i + 1,
+        "Merchant":    r.userId?.name ?? "—",
+        "Email":       r.userId?.email ?? "—",
+        "Amount":      r.amount,
+        "Currency":    r.currency,
+        "Method":      r.paymentMethod ?? "manual",
+        "Order ID":    r.orderId ?? "—",
+        "UTR / Ref":   r.paymentReference ?? "—",
+        "Status":      r.status,
+        "Admin Note":  r.adminNote ?? "—",
+        "Submitted":   new Date(r.createdAt).toLocaleString("en-IN"),
+      }));
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(sheet);
+      ws["!cols"] = [
+        { wch: 5 }, { wch: 20 }, { wch: 26 }, { wch: 10 }, { wch: 8 },
+        { wch: 8 }, { wch: 30 }, { wch: 22 }, { wch: 10 }, { wch: 30 }, { wch: 22 },
+      ];
+      XLSX.utils.book_append_sheet(wb, ws, "Fund Requests");
+      XLSX.writeFile(wb, `fund_requests_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch { /* silent */ }
+    finally { setExporting(false); }
   };
 
   const cards: SummaryCardItem[] = [
@@ -116,14 +216,104 @@ export default function AdminFundRequestsPage() {
   ];
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Fund Requests</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Review merchant top-up requests and credit wallets.</p>
+    <div className="flex flex-col gap-4">
+
+      {/* Heading */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Fund Requests</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Review merchant top-up requests and credit wallets.</p>
+        </div>
+        <button
+          onClick={exportToExcel}
+          disabled={exporting || total === 0}
+          className="flex items-center gap-1.5 rounded-lg border border-border bg-secondary/50 hover:bg-secondary px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors"
+        >
+          {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+          {exporting ? "Exporting…" : "Export Excel"}
+        </button>
       </div>
 
-      {/* Summary */}
-      <SummaryCards items={cards} />
+      {/* Date presets + Summary cards */}
+      <div className="space-y-2.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {(["all", "today", "week", "month"] as const).map(p => {
+            const label = { all: "All Time", today: "Today", week: "Last 7 Days", month: "This Month" }[p];
+            return (
+              <button key={p} onClick={() => applyDatePreset(p)}
+                className={cn(
+                  "rounded-full px-3 py-1 text-xs font-medium border transition-colors",
+                  datePreset === p
+                    ? "bg-brand text-white border-brand"
+                    : "bg-secondary/50 text-muted-foreground border-border hover:text-foreground hover:bg-secondary"
+                )}>
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        <SummaryCards items={cards} />
+      </div>
+
+      {/* Filters */}
+      <div className="rounded-xl border border-border bg-card px-4 py-3">
+        <div className="flex flex-wrap gap-2">
+
+          {/* Merchant search */}
+          <div className="relative flex-1 min-w-[160px]">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+            <input value={filters.merchantSearch} onChange={set("merchantSearch")}
+              placeholder="Search merchant"
+              className="w-full rounded-md border border-border bg-secondary/40 pl-7 pr-2.5 h-8 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 focus:border-brand/50 transition-colors" />
+          </div>
+
+          {/* Payment method */}
+          <select value={filters.paymentMethod} onChange={set("paymentMethod")}
+            className="rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 w-32">
+            <option value="">Method</option>
+            <option value="upi">UPI</option>
+            <option value="card">Card</option>
+            <option value="crypto">Crypto</option>
+            <option value="manual">Manual</option>
+          </select>
+
+          {/* Status */}
+          <select value={filters.status} onChange={set("status")}
+            className="rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 w-36">
+            <option value="">All Status</option>
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+          </select>
+
+          {/* Amount range */}
+          <div className="flex items-center gap-1">
+            <input value={filters.minAmount} onChange={set("minAmount")} type="number" min="0"
+              placeholder="Min ₹"
+              className="w-20 rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 transition-colors" />
+            <span className="text-muted-foreground text-xs">–</span>
+            <input value={filters.maxAmount} onChange={set("maxAmount")} type="number" min="0"
+              placeholder="Max ₹"
+              className="w-20 rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 transition-colors" />
+          </div>
+
+          {/* Date range */}
+          <div className="flex items-center gap-1">
+            <input type="date" value={filters.dateFrom} onChange={set("dateFrom")}
+              className="rounded-md border border-border bg-secondary/40 px-2 h-8 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 transition-colors" />
+            <span className="text-muted-foreground text-xs">–</span>
+            <input type="date" value={filters.dateTo} onChange={set("dateTo")}
+              className="rounded-md border border-border bg-secondary/40 px-2 h-8 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 transition-colors" />
+          </div>
+
+          {activeCount > 0 && (
+            <button onClick={clearAll}
+              className="flex items-center gap-1 rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors whitespace-nowrap">
+              <X className="h-3 w-3" /> Clear ({activeCount})
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* Review modal */}
       {reviewing && (
@@ -160,29 +350,23 @@ export default function AdminFundRequestsPage() {
               </div>
 
               <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => setAction("approved")}
+                <button onClick={() => setAction("approved")}
                   className={cn("flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-semibold transition-colors",
-                    action === "approved" ? "bg-yes text-white" : "bg-secondary text-muted-foreground hover:text-foreground")}
-                >
+                    action === "approved" ? "bg-yes text-white" : "bg-secondary text-muted-foreground hover:text-foreground")}>
                   <CheckCircle2 className="h-4 w-4" /> Approve
                 </button>
-                <button
-                  onClick={() => setAction("rejected")}
+                <button onClick={() => setAction("rejected")}
                   className={cn("flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-semibold transition-colors",
-                    action === "rejected" ? "bg-no text-white" : "bg-secondary text-muted-foreground hover:text-foreground")}
-                >
+                    action === "rejected" ? "bg-no text-white" : "bg-secondary text-muted-foreground hover:text-foreground")}>
                   <XCircle className="h-4 w-4" /> Reject
                 </button>
               </div>
 
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-foreground">Admin Note (optional)</label>
-                <textarea
-                  value={adminNote} onChange={e => setAdminNote(e.target.value)} rows={2}
+                <textarea value={adminNote} onChange={e => setAdminNote(e.target.value)} rows={2}
                   placeholder="Reason for approval/rejection..."
-                  className="w-full rounded-lg border border-border bg-secondary px-3 py-2.5 text-sm text-foreground outline-none focus:border-brand/50 resize-none"
-                />
+                  className="w-full rounded-lg border border-border bg-secondary px-3 py-2.5 text-sm text-foreground outline-none focus:border-brand/50 resize-none" />
               </div>
 
               {reviewError && <div className="text-sm text-destructive">{reviewError}</div>}
@@ -206,28 +390,17 @@ export default function AdminFundRequestsPage() {
 
       {/* Table */}
       <div className={TABLE.wrapper}>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <p className="text-sm font-semibold text-foreground">Requests</p>
-          <div className="flex items-center gap-2">
-            <Filter className="h-3.5 w-3.5 text-muted-foreground" />
-            <select
-              value={filterStatus}
-              onChange={e => { setFilterStatus(e.target.value); setPage(1); }}
-              className="rounded-md border border-border bg-secondary text-xs text-foreground px-2.5 py-1.5 outline-none"
-            >
-              <option value="">All status</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="rejected">Rejected</option>
-            </select>
-          </div>
-        </div>
         {loading ? (
           <div className="flex justify-center py-16"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
         ) : requests.length === 0 ? (
           <div className="flex flex-col items-center py-16 gap-2 text-center">
             <ArrowUpCircle className="h-9 w-9 text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">No fund requests</p>
+            <p className="text-sm text-muted-foreground">
+              {activeCount > 0 ? "No requests match the filters" : "No fund requests"}
+            </p>
+            {activeCount > 0 && (
+              <button onClick={clearAll} className="text-xs text-brand hover:underline mt-1">Clear filters</button>
+            )}
           </div>
         ) : (
           <>
@@ -235,6 +408,7 @@ export default function AdminFundRequestsPage() {
               <table className={TABLE.table}>
                 <thead>
                   <tr className={TABLE.thead}>
+                    <th className={TABLE.th}>#</th>
                     <th className={TABLE.th}>Merchant</th>
                     <th className={TABLE.thRight}>Amount</th>
                     <th className={TABLE.th}>Method</th>
@@ -247,10 +421,11 @@ export default function AdminFundRequestsPage() {
                   </tr>
                 </thead>
                 <tbody className={TABLE.tbody}>
-                  {requests.map(req => {
+                  {requests.map((req, idx) => {
                     const s = STATUS_STYLE[req.status];
                     return (
                       <tr key={req._id} className={TABLE.row}>
+                        <td className={TABLE.tdMuted}>{(page - 1) * 15 + idx + 1}</td>
                         <td className={TABLE.td}>
                           <p className="font-medium text-foreground">{req.userId?.name}</p>
                           <p className="text-xs text-muted-foreground">{req.userId?.email}</p>
@@ -301,21 +476,19 @@ export default function AdminFundRequestsPage() {
                 </tbody>
               </table>
             </div>
-            {totalPages > 1 && (
-              <div className={TABLE.footer}>
-                <span className="text-muted-foreground">Page <b>{page}</b> of <b>{totalPages}</b></span>
-                <div className="flex gap-2">
-                  <button onClick={() => setPage(p => p - 1)} disabled={page <= 1}
-                    className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-muted-foreground hover:text-foreground disabled:opacity-40">
-                    <ChevronLeft className="h-3.5 w-3.5" /> Prev
-                  </button>
-                  <button onClick={() => setPage(p => p + 1)} disabled={page >= totalPages}
-                    className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-muted-foreground hover:text-foreground disabled:opacity-40">
-                    Next <ChevronRight className="h-3.5 w-3.5" />
-                  </button>
-                </div>
+            <div className={TABLE.footer}>
+              <span className="text-xs text-muted-foreground">Page <b>{page}</b> of <b>{totalPages}</b> &mdash; {total} total</span>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setPage(p => p - 1)} disabled={page <= 1}
+                  className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-40 transition-colors">
+                  <ChevronLeft className="h-3.5 w-3.5" /> Prev
+                </button>
+                <button onClick={() => setPage(p => p + 1)} disabled={page >= totalPages}
+                  className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-40 transition-colors">
+                  Next <ChevronRight className="h-3.5 w-3.5" />
+                </button>
               </div>
-            )}
+            </div>
           </>
         )}
       </div>
