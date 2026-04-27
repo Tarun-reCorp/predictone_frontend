@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   ShoppingBag, ChevronLeft, ChevronRight,
   Hash, DollarSign, CheckCheck, Timer, Loader2, Search, X, Download,
+  TrendingUp, TrendingDown, RotateCcw,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 
@@ -20,6 +21,8 @@ interface AdminOrder {
   marketQuestion?: string;
   outcome: "Yes" | "No";
   amount: number;
+  payout?: number | null;
+  result?: "won" | "lost" | "refunded" | null;
   status: "pending" | "submitted" | "matched" | "settled" | "failed" | "cancelled";
   createdAt: string;
 }
@@ -128,7 +131,6 @@ export default function AdminOrdersPage() {
       .finally(() => { if (!signal?.aborted) setLoading(false); });
   }, [token]);
 
-  // Debounce: 400ms after filters/page change; abort stale in-flight requests
   useEffect(() => {
     const controller = new AbortController();
     const t = setTimeout(() => fetchOrders(page, filters, controller.signal), 400);
@@ -149,7 +151,6 @@ export default function AdminOrdersPage() {
     setExporting(true);
     try {
       const q = buildFilterParams(filters, { page: "1", limit: "5000" });
-
       const res  = await fetch(`${BACKEND}/api/admin/orders?${q}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -158,31 +159,38 @@ export default function AdminOrdersPage() {
 
       const sheet = rows.map((o, i) => {
         const merchant = typeof o.userId === "object" ? o.userId : null;
+        const profit = o.result === "won"
+          ? parseFloat(((o.payout ?? 0) - o.amount).toFixed(2))
+          : o.result === "lost" ? -o.amount
+          : null;
+        const marketResolved =
+          o.result === "won"  ? o.outcome :
+          o.result === "lost" ? (o.outcome === "Yes" ? "No" : "Yes") : "";
         return {
-          "#":          i + 1,
-          "Order ID":   o.orderNumber ?? o._id.slice(-8).toUpperCase(),
-          "Merchant":   merchant?.name ?? "—",
-          "Email":      merchant?.email ?? "—",
-          "Market":     o.marketQuestion ?? o.conditionId,
-          "Outcome":    o.outcome,
-          "Amount ($)": o.amount,
-          "Status":     o.status,
-          "Date":       new Date(o.createdAt).toLocaleString("en-IN"),
+          "#":               i + 1,
+          "Order ID":        o.orderNumber ?? o._id.slice(-8).toUpperCase(),
+          "Merchant":        merchant?.name ?? "—",
+          "Email":           merchant?.email ?? "—",
+          "Market":          o.marketQuestion ?? o.conditionId,
+          "Bet Placed":      o.outcome,
+          "Staked ($)":      o.amount,
+          "Payout ($)":      o.payout ?? "",
+          "P&L ($)":         profit ?? "",
+          "Market Resolved": marketResolved,
+          "Result":          o.result ?? "",
+          "Status":          o.status,
+          "Date":            new Date(o.createdAt).toLocaleString("en-IN"),
         };
       });
 
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.json_to_sheet(sheet);
-
-      // Column widths
       ws["!cols"] = [
         { wch: 5 }, { wch: 14 }, { wch: 20 }, { wch: 26 },
-        { wch: 42 }, { wch: 9 }, { wch: 12 }, { wch: 12 }, { wch: 22 },
+        { wch: 42 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 22 },
       ];
-
       XLSX.utils.book_append_sheet(wb, ws, "Orders");
-      const date = new Date().toISOString().slice(0, 10);
-      XLSX.writeFile(wb, `orders_${date}.xlsx`);
+      XLSX.writeFile(wb, `orders_${new Date().toISOString().slice(0, 10)}.xlsx`);
     } catch {
       // silent fail
     } finally {
@@ -207,16 +215,13 @@ export default function AdminOrdersPage() {
           disabled={exporting || total === 0}
           className="flex items-center gap-1.5 rounded-lg border border-border bg-secondary/50 hover:bg-secondary px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors"
         >
-          {exporting
-            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            : <Download className="h-3.5 w-3.5" />}
+          {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
           {exporting ? "Exporting…" : "Export Excel"}
         </button>
       </div>
 
-      {/* ── Summary cards + date presets ── */}
+      {/* ── Date presets + Summary cards ── */}
       <div className="space-y-2.5">
-        {/* Date preset chips */}
         <div className="flex items-center gap-1.5">
           {(["all", "today", "week", "month"] as const).map((p) => {
             const label = { all: "All Time", today: "Today", week: "Last 7 Days", month: "This Month" }[p];
@@ -239,7 +244,6 @@ export default function AdminOrdersPage() {
           )}
         </div>
 
-        {/* Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <SummaryCard icon={Hash}       label="Total Orders" value={String(total)}
             accent="text-brand"   bg="bg-brand/10"
@@ -251,17 +255,14 @@ export default function AdminOrdersPage() {
             value={loading ? "…" : String(orders.filter((o) => o.status === "settled").length)}
             accent="text-yes"     bg="bg-yes/10" sub="Current page" />
           <SummaryCard icon={Timer}      label="Pending"
-            value={loading ? "…" : String(orders.filter((o) => ["pending","submitted"].includes(o.status)).length)}
+            value={loading ? "…" : String(orders.filter((o) => ["pending", "submitted"].includes(o.status)).length)}
             accent="text-chart-4" bg="bg-chart-4/10" sub="Current page" />
         </div>
       </div>
 
       {/* ── Filters ── */}
       <div className="rounded-xl border border-border bg-card px-4 py-3 space-y-2.5">
-
-        {/* Row 1 — search inputs */}
         <div className="flex flex-wrap gap-2">
-          {/* Market search */}
           <div className="relative flex-1 min-w-[160px]">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
             <input value={filters.marketQuestion} onChange={set("marketQuestion")}
@@ -269,29 +270,25 @@ export default function AdminOrdersPage() {
               className="w-full rounded-md border border-border bg-secondary/40 pl-7 pr-2.5 h-8 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 focus:border-brand/50 transition-colors" />
           </div>
 
-          {/* Order ID */}
           <div className="relative w-40">
             <input value={filters.orderNumber} onChange={set("orderNumber")}
               placeholder="Order ID"
               className="w-full rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 focus:border-brand/50 font-mono transition-colors" />
           </div>
 
-          {/* Merchant */}
           <div className="relative flex-1 min-w-[140px]">
             <input value={filters.merchantSearch} onChange={set("merchantSearch")}
-              placeholder="Merchant"
+              placeholder="Merchant name / email"
               className="w-full rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 focus:border-brand/50 transition-colors" />
           </div>
 
-          {/* Outcome */}
           <select value={filters.outcome} onChange={set("outcome")}
             className="rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 focus:border-brand/50 transition-colors w-32">
-            <option value="">Outcome</option>
+            <option value="">Bet Placed</option>
             <option value="Yes">Yes</option>
             <option value="No">No</option>
           </select>
 
-          {/* Status */}
           <select value={filters.status} onChange={set("status")}
             className="rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 focus:border-brand/50 transition-colors w-36">
             <option value="">Status</option>
@@ -300,7 +297,6 @@ export default function AdminOrdersPage() {
             ))}
           </select>
 
-          {/* Amount range */}
           <div className="flex items-center gap-1">
             <input value={filters.minAmount} onChange={set("minAmount")} type="number" min="0"
               placeholder="Min $"
@@ -311,7 +307,6 @@ export default function AdminOrdersPage() {
               className="w-20 rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 focus:border-brand/50 transition-colors" />
           </div>
 
-          {/* Date range */}
           <div className="flex items-center gap-1">
             <input type="date" value={filters.dateFrom} onChange={set("dateFrom")}
               className="rounded-md border border-border bg-secondary/40 px-2 h-8 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 focus:border-brand/50 transition-colors" />
@@ -320,7 +315,6 @@ export default function AdminOrdersPage() {
               className="rounded-md border border-border bg-secondary/40 px-2 h-8 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 focus:border-brand/50 transition-colors" />
           </div>
 
-          {/* Clear */}
           {activeCount > 0 && (
             <button onClick={clearAll}
               className="flex items-center gap-1 rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors whitespace-nowrap">
@@ -352,12 +346,15 @@ export default function AdminOrdersPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-secondary/30">
-                    {["#", "Order ID", "Merchant", "Market", "Outcome", "Amount", "Status", "Date"].map((h) => (
-                      <th key={h} className={cn(
-                        "px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground",
-                        h === "Amount" ? "text-right" : "text-left"
-                      )}>{h}</th>
-                    ))}
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground w-10">#</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Order ID</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Merchant</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Market</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Bet Placed</th>
+                    <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Staked</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Settlement & P&L</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Status</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Date</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
@@ -381,12 +378,25 @@ export default function AdminOrdersPage() {
                           </p>
                         </td>
                         <td className="px-4 py-3">
-                          <span className={cn(
-                            "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold",
-                            o.outcome === "Yes" ? "bg-yes/15 text-yes" : "bg-no/15 text-no"
-                          )}>{o.outcome}</span>
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-[10px] text-muted-foreground/60 font-medium">Bought</span>
+                            <span className={cn(
+                              "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold w-fit",
+                              o.outcome === "Yes" ? "bg-yes/15 text-yes" : "bg-no/15 text-no"
+                            )}>
+                              {o.outcome === "Yes"
+                                ? <TrendingUp className="h-3 w-3" />
+                                : <TrendingDown className="h-3 w-3" />}
+                              {o.outcome}
+                            </span>
+                          </div>
                         </td>
-                        <td className="px-4 py-3 text-right text-sm font-semibold font-mono text-foreground">{fmtAmt(o.amount)}</td>
+                        <td className="px-4 py-3 text-right">
+                          <span className="text-sm font-semibold font-mono text-foreground">{fmtAmt(o.amount)}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <OrderResultCell order={o} />
+                        </td>
                         <td className="px-4 py-3">
                           <span className={cn(
                             "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold capitalize",
@@ -408,6 +418,69 @@ export default function AdminOrdersPage() {
   );
 }
 
+function OrderResultCell({ order }: { order: AdminOrder }) {
+  if (order.status !== "settled") {
+    return <span className="text-xs text-muted-foreground/50">—</span>;
+  }
+
+  const { result, payout, amount, outcome } = order;
+
+  const marketResolved: "Yes" | "No" | null =
+    result === "won"  ? outcome :
+    result === "lost" ? (outcome === "Yes" ? "No" : "Yes") :
+    null;
+
+  if (result === "won") {
+    const profit = parseFloat(((payout ?? 0) - amount).toFixed(2));
+    return (
+      <div className="flex flex-col gap-1">
+        <span className="inline-flex items-center gap-1 rounded-full bg-yes/15 text-yes px-2.5 py-1 text-xs font-bold w-fit">
+          <TrendingUp className="h-3 w-3" /> You Won
+        </span>
+        <span className="text-[10px] text-muted-foreground pl-0.5">
+          Market resolved → <span className="font-semibold text-yes">{marketResolved}</span>
+        </span>
+        <span className="text-xs font-mono text-yes font-semibold pl-0.5">
+          Payout: +{fmtAmt(payout ?? 0)}{" "}
+          <span className="text-yes/70">(+{fmtAmt(profit)} profit)</span>
+        </span>
+      </div>
+    );
+  }
+
+  if (result === "lost") {
+    return (
+      <div className="flex flex-col gap-1">
+        <span className="inline-flex items-center gap-1 rounded-full bg-no/15 text-no px-2.5 py-1 text-xs font-bold w-fit">
+          <TrendingDown className="h-3 w-3" /> You Lost
+        </span>
+        <span className="text-[10px] text-muted-foreground pl-0.5">
+          Market resolved → <span className="font-semibold text-no">{marketResolved}</span>
+        </span>
+        <span className="text-xs font-mono text-no font-semibold pl-0.5">
+          Lost: -{fmtAmt(amount)}{" "}
+          <span className="text-no/70">(stake lost)</span>
+        </span>
+      </div>
+    );
+  }
+
+  if (result === "refunded") {
+    return (
+      <div className="flex flex-col gap-1">
+        <span className="inline-flex items-center gap-1 rounded-full bg-muted-foreground/15 text-muted-foreground px-2.5 py-1 text-xs font-bold w-fit">
+          <RotateCcw className="h-3 w-3" /> Refunded
+        </span>
+        <span className="text-[10px] text-muted-foreground pl-0.5">Market cancelled / Draw</span>
+        <span className="text-xs font-mono text-muted-foreground font-semibold pl-0.5">
+          Returned: {fmtAmt(payout ?? amount)}
+        </span>
+      </div>
+    );
+  }
+
+  return <span className="text-xs text-muted-foreground/50">Settled</span>;
+}
 
 function SummaryCard({ icon: Icon, label, value, accent, bg, sub }: {
   icon: React.ElementType; label: string; value: string;

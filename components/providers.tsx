@@ -4,7 +4,7 @@ import { createWeb3Modal, defaultConfig } from "@web3modal/ethers/react";
 import { AuthProvider } from "@/contexts/auth-context";
 import { WalletProvider } from "@/contexts/wallet-context";
 
-const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? "";
+const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? "1234";
 
 const metadata = {
   name: "PredictOne",
