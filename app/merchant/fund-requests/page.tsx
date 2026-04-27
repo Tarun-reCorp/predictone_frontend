@@ -7,6 +7,7 @@ import {
   ChevronLeft, ChevronRight, Loader2, Plus, X,
   CalendarClock, ListChecks, FileText, Download,
   QrCode, CreditCard, Bitcoin, AlertTriangle, RefreshCw,
+  Info,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { useAuth } from "@/contexts/auth-context";
@@ -73,8 +74,7 @@ export default function FundRequestsPage() {
   const [datePreset, setDatePreset]       = useState<"all"|"today"|"week"|"month">("all");
   const [exporting, setExporting]         = useState(false);
   const [autoRejectMsg, setAutoRejectMsg] = useState<string | null>(null);
-  const [statusMsg, setStatusMsg] = useState<{ type: "success" | "error" | "warn"; text: string } | null>(null);
-  const [checkingId, setCheckingId] = useState<string | null>(null);
+  const [submittingId, setSubmittingId] = useState<string | null>(null);
   const cardCheckDone = useRef(false);
 
   // Form state
@@ -87,10 +87,16 @@ export default function FundRequestsPage() {
   const [formError, setFormError]   = useState("");
   const [formSuccess, setFormSuccess] = useState("");
 
-  // UTR submission modal for draft requests
-  const [utrModal, setUtrModal] = useState<{
-    requestId: string; orderId?: string; value: string; loading: boolean; error: string;
-  } | null>(null);
+  // Status popup modal (for Check Status button)
+  const [statusModal, setStatusModal] = useState<{
+    open: boolean;
+    loading: boolean;
+    req: FundRequest | null;
+    action: "approved" | "rejected" | "pending" | "error" | null;
+    gwStatus: string;
+    reason: string;
+    amount: number;
+  }>({ open: false, loading: false, req: null, action: null, gwStatus: "", reason: "", amount: 0 });
 
   const load = useCallback(() => {
     if (!token) return;
@@ -170,9 +176,9 @@ export default function FundRequestsPage() {
     finally { setExporting(false); }
   };
 
-  // ── Card payment auto-reject on gateway redirect ──────────────────────────
+  // ── Card payment auto-settle on gateway redirect ───────────────────────────
   // When card gateway redirects back with ?card_ord=CARD-xxx, check status
-  // and reject the matching draft fund request if payment was declined/failed.
+  // and auto-approve on success or auto-reject on failure.
   useEffect(() => {
     const cardOrd = searchParams.get("card_ord");
     if (!cardOrd || !token || cardCheckDone.current) return;
@@ -192,10 +198,11 @@ export default function FundRequestsPage() {
           body: JSON.stringify({ order_ref_no: cardOrd }),
         });
         const statusData = await statusRes.json();
-        const gwStatus = (statusData?.status ?? statusData?.payment_status ?? "").toLowerCase();
+        const gwStatus   = (statusData?.status         ?? "").toLowerCase();
+        const payStatus  = (statusData?.payment_status ?? "").toLowerCase();
 
-        // Only auto-reject on clear failure signals
-        if (!["failed", "declined", "failure", "cancelled", "cancel", "rejected"].includes(gwStatus)) return;
+        const FAILURE = ["failed", "declined", "failure", "cancelled", "cancel", "rejected"];
+        const SUCCESS = ["success", "completed", "paid", "captured", "settlement", "settled"];
 
         // 2. Find the matching fund request by orderId — draft OR pending
         const listRes = await fetch(`${API}/api/merchant/fund-requests?limit=50`, {
@@ -207,17 +214,35 @@ export default function FundRequestsPage() {
         );
         if (!matched) return;
 
-        // 3. Reject it with the gateway reason
-        const reason = statusData?.message || statusData?.description
-          || `Card payment ${gwStatus} by gateway (Order: ${cardOrd})`;
-        await fetch(`${API}/api/merchant/fund-requests/${matched._id}/reject-failed`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ reason }),
-        });
-
-        setAutoRejectMsg(`Card payment was ${gwStatus}: ${reason}`);
-        load();
+        if (FAILURE.includes(gwStatus) || FAILURE.includes(payStatus)) {
+          // Auto-reject
+          const reason = statusData?.message || statusData?.description
+            || `Card payment ${gwStatus || payStatus} by gateway (Order: ${cardOrd})`;
+          await fetch(`${API}/api/merchant/fund-requests/${matched._id}/reject-failed`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ reason }),
+          });
+          setAutoRejectMsg(`Card payment failed: ${reason}`);
+          load();
+        } else if (SUCCESS.includes(payStatus)) {
+          // Auto-approve via check-and-settle (payment_status is the reliable success field)
+          const settleRes = await fetch(`${API}/api/merchant/fund-requests/${matched._id}/check-and-settle`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const settleData = await settleRes.json();
+          const { action, gwStatus: gw, reason } = settleData.data ?? {};
+          setStatusModal({
+            open: true, loading: false, req: matched,
+            action: action ?? "pending",
+            gwStatus: gw ?? payStatus,
+            reason: reason ?? "",
+            amount: matched.amount,
+          });
+          load();
+        }
+        // If status is unknown / pending → leave as draft, merchant can click "Check Status"
       } catch {
         // silently ignore — don't block the page
       }
@@ -246,11 +271,28 @@ export default function FundRequestsPage() {
     } finally { setSubmitting(false); }
   };
 
-  // ── Check payment status with gateway → auto-approve or auto-reject ────────
+  // ── Payment Done: move draft → pending immediately (no UTR required) ─────────
+  const handlePaymentDone = async (req: FundRequest) => {
+    setSubmittingId(req._id);
+    try {
+      const res = await fetch(`${API}/api/merchant/fund-requests/${req._id}/submit-utr`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message ?? "Failed");
+      load();
+    } catch {
+      // silently ignore — list will still reload
+    } finally {
+      setSubmittingId(null);
+    }
+  };
+
+  // ── Check Status: call check-and-settle, show result in popup modal ──────────
   const handleCheckStatus = async (req: FundRequest) => {
-    setCheckingId(req._id);
-    setStatusMsg(null);
-    setAutoRejectMsg(null);
+    setStatusModal({ open: true, loading: true, req, action: null, gwStatus: "", reason: "", amount: req.amount });
     try {
       const res = await fetch(`${API}/api/merchant/fund-requests/${req._id}/check-and-settle`, {
         method: "POST",
@@ -260,86 +302,13 @@ export default function FundRequestsPage() {
       if (!res.ok) throw new Error(data.message ?? "Status check failed");
 
       const { action, gwStatus, reason } = data.data ?? {};
-
-      if (action === "approved") {
-        setStatusMsg({
-          type: "success",
-          text: `Payment confirmed (${gwStatus}) — wallet credited successfully!`,
-        });
-      } else if (action === "rejected") {
-        setStatusMsg({
-          type: "error",
-          text: `Payment ${gwStatus} — request rejected. Reason: ${reason}`,
-        });
-      } else {
-        setStatusMsg({
-          type: "warn",
-          text: `Payment status: "${gwStatus}" — still processing. Try again in a few minutes.`,
-        });
-      }
+      setStatusModal(m => ({ ...m, loading: false, action: action ?? "pending", gwStatus: gwStatus ?? "", reason: reason ?? "" }));
       load();
     } catch (err: unknown) {
-      setStatusMsg({
-        type: "error",
-        text: err instanceof Error ? err.message : "Status check failed",
-      });
-    } finally {
-      setCheckingId(null);
-    }
-  };
-
-  // Before showing UTR modal, check if UPI payment actually failed on the gateway.
-  // If failed → auto-reject the fund request and show reason.
-  // If success/pending or no orderId → open UTR modal normally.
-  const handleOpenUtrModal = async (req: FundRequest) => {
-    if (req.paymentMethod === "upi" && req.orderId) {
-      try {
-        const statusRes = await fetch(`${API}/api/payment/upi/payin/status`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ order_id: req.orderId }),
-        });
-        const statusData = await statusRes.json();
-        const gwStatus = (statusData?.status ?? "").toLowerCase();
-
-        if (["failed", "failure", "cancelled", "rejected", "declined"].includes(gwStatus)) {
-          const reason = statusData?.message || statusData?.description
-            || `UPI payment ${gwStatus} (Order: ${req.orderId})`;
-          await fetch(`${API}/api/merchant/fund-requests/${req._id}/reject-failed`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ reason }),
-          });
-          setAutoRejectMsg(`UPI payment failed: ${reason}`);
-          load();
-          return;
-        }
-      } catch {
-        // If status check fails, fall through to UTR modal — don't block the merchant
-      }
-    }
-    setUtrModal({ requestId: req._id, orderId: req.orderId, value: "", loading: false, error: "" });
-  };
-
-  const handlePaymentDone = async () => {
-    if (!utrModal) return;
-    if (!utrModal.value.trim()) {
-      setUtrModal(m => m ? { ...m, error: "UTR number is required" } : null);
-      return;
-    }
-    setUtrModal(m => m ? { ...m, loading: true, error: "" } : null);
-    try {
-      const res = await fetch(`${API}/api/merchant/fund-requests/${utrModal.requestId}/submit-utr`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ utrNumber: utrModal.value.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message ?? "Failed");
-      setUtrModal(null);
-      load();
-    } catch (err: unknown) {
-      setUtrModal(m => m ? { ...m, loading: false, error: err instanceof Error ? err.message : "Failed" } : null);
+      setStatusModal(m => ({
+        ...m, loading: false, action: "error",
+        reason: err instanceof Error ? err.message : "Status check failed",
+      }));
     }
   };
 
@@ -356,7 +325,7 @@ export default function FundRequestsPage() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Fund Requests</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Submit UTR / transaction references after paying to top-up your wallet.
+            After making a payment, click "Payment Done" to submit for review or "Check Status" to auto-verify.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -450,7 +419,7 @@ export default function FundRequestsPage() {
         </div>
       </div>
 
-      {/* Auto-reject banner (card redirect) */}
+      {/* Auto-reject banner (card redirect failure) */}
       {autoRejectMsg && (
         <div className="flex items-start gap-3 rounded-xl border border-no/30 bg-no/10 px-4 py-3">
           <AlertTriangle className="h-4 w-4 text-no shrink-0 mt-0.5" />
@@ -459,29 +428,6 @@ export default function FundRequestsPage() {
             <p className="text-xs text-muted-foreground mt-0.5">{autoRejectMsg}</p>
           </div>
           <button onClick={() => setAutoRejectMsg(null)} className="text-muted-foreground hover:text-foreground">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-
-      {/* Check-status result banner */}
-      {statusMsg && (
-        <div className={cn(
-          "flex items-start gap-3 rounded-xl border px-4 py-3",
-          statusMsg.type === "success" && "border-yes/30 bg-yes/10",
-          statusMsg.type === "error"   && "border-no/30 bg-no/10",
-          statusMsg.type === "warn"    && "border-chart-4/30 bg-chart-4/10",
-        )}>
-          {statusMsg.type === "success" && <CheckCircle2 className="h-4 w-4 text-yes shrink-0 mt-0.5" />}
-          {statusMsg.type === "error"   && <XCircle      className="h-4 w-4 text-no  shrink-0 mt-0.5" />}
-          {statusMsg.type === "warn"    && <Clock        className="h-4 w-4 text-chart-4 shrink-0 mt-0.5" />}
-          <p className={cn(
-            "flex-1 text-sm",
-            statusMsg.type === "success" && "text-yes",
-            statusMsg.type === "error"   && "text-no",
-            statusMsg.type === "warn"    && "text-chart-4",
-          )}>{statusMsg.text}</p>
-          <button onClick={() => setStatusMsg(null)} className="text-muted-foreground hover:text-foreground">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -559,53 +505,132 @@ export default function FundRequestsPage() {
         </div>
       )}
 
-      {/* UTR submission modal */}
-      {utrModal && (
+      {/* ── Check Status popup modal ── */}
+      {statusModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="w-full max-w-sm rounded-2xl border border-border bg-card shadow-2xl">
             <div className="flex items-center justify-between border-b border-border px-6 py-4">
-              <h2 className="text-base font-bold text-foreground">Submit UTR Number</h2>
-              <button onClick={() => setUtrModal(null)} className="text-muted-foreground hover:text-foreground">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="p-6 flex flex-col gap-4">
-              <p className="text-sm text-muted-foreground">
-                Enter the UTR / transaction reference number from your UPI app to confirm payment.
-              </p>
-              {utrModal.error && (
-                <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-4 py-2.5 text-sm text-destructive">
-                  {utrModal.error}
-                </div>
+              <h2 className="text-base font-bold text-foreground">Payment Status</h2>
+              {!statusModal.loading && (
+                <button
+                  onClick={() => setStatusModal(m => ({ ...m, open: false }))}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               )}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-foreground">UTR Number *</label>
-                <input
-                  type="text"
-                  value={utrModal.value}
-                  onChange={e => setUtrModal(m => m ? { ...m, value: e.target.value, error: "" } : null)}
-                  placeholder="e.g. 425812345678"
-                  autoFocus
-                  className="w-full rounded-lg border border-border bg-secondary px-3 py-2.5 text-sm text-foreground outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20"
-                />
-              </div>
-              <div className="flex gap-3 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setUtrModal(null)}
-                  className="flex-1 rounded-lg border border-border bg-secondary hover:bg-secondary/80 py-2.5 text-sm font-medium text-foreground transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handlePaymentDone}
-                  disabled={utrModal.loading}
-                  className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-brand hover:bg-brand/90 disabled:opacity-60 text-primary-foreground font-semibold py-2.5 text-sm transition-colors"
-                >
-                  {utrModal.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                  {utrModal.loading ? "Submitting…" : "Confirm Payment"}
-                </button>
-              </div>
+            </div>
+
+            <div className="p-6 flex flex-col items-center gap-4 text-center">
+              {/* Loading */}
+              {statusModal.loading && (
+                <>
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-brand/10">
+                    <Loader2 className="h-7 w-7 animate-spin text-brand" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Checking with Gateway…</p>
+                    <p className="text-xs text-muted-foreground mt-1">Please wait</p>
+                  </div>
+                </>
+              )}
+
+              {/* Approved */}
+              {!statusModal.loading && statusModal.action === "approved" && (
+                <>
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-yes/15">
+                    <CheckCircle2 className="h-7 w-7 text-yes" />
+                  </div>
+                  <div>
+                    <p className="text-base font-bold text-foreground">Payment Confirmed!</p>
+                    <p className="text-xs text-muted-foreground mt-1">Wallet has been credited successfully.</p>
+                  </div>
+                  <div className="w-full rounded-lg border border-border bg-secondary/50 divide-y divide-border/50 text-xs">
+                    <div className="flex items-center justify-between px-3 py-2.5">
+                      <span className="text-muted-foreground">Gateway Status</span>
+                      <span className="font-semibold text-yes capitalize">{statusModal.gwStatus}</span>
+                    </div>
+                    <div className="flex items-center justify-between px-3 py-2.5">
+                      <span className="text-muted-foreground">Amount Credited</span>
+                      <span className="font-mono font-semibold text-foreground">${statusModal.amount.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setStatusModal(m => ({ ...m, open: false }))}
+                    className="w-full rounded-lg bg-yes hover:bg-yes/90 text-white font-semibold py-2.5 text-sm transition-colors"
+                  >
+                    Done
+                  </button>
+                </>
+              )}
+
+              {/* Rejected */}
+              {!statusModal.loading && statusModal.action === "rejected" && (
+                <>
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-no/15">
+                    <XCircle className="h-7 w-7 text-no" />
+                  </div>
+                  <div>
+                    <p className="text-base font-bold text-foreground">Payment Failed</p>
+                    <p className="text-xs text-muted-foreground mt-1">{statusModal.reason || `Gateway status: ${statusModal.gwStatus}`}</p>
+                  </div>
+                  <button
+                    onClick={() => setStatusModal(m => ({ ...m, open: false }))}
+                    className="w-full rounded-lg border border-border bg-secondary hover:bg-secondary/80 text-foreground font-semibold py-2.5 text-sm transition-colors"
+                  >
+                    Close
+                  </button>
+                </>
+              )}
+
+              {/* Pending / unknown */}
+              {!statusModal.loading && statusModal.action === "pending" && (
+                <>
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-chart-4/15">
+                    <Clock className="h-7 w-7 text-chart-4" />
+                  </div>
+                  <div>
+                    <p className="text-base font-bold text-foreground">Still Processing</p>
+                    <p className="text-xs text-muted-foreground mt-1">Gateway status: <span className="font-semibold text-foreground capitalize">{statusModal.gwStatus || "pending"}</span></p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Try again in a few minutes.</p>
+                  </div>
+                  <div className="flex gap-2 w-full">
+                    <button
+                      onClick={() => setStatusModal(m => ({ ...m, open: false }))}
+                      className="flex-1 rounded-lg border border-border bg-secondary hover:bg-secondary/80 text-foreground font-semibold py-2.5 text-sm transition-colors"
+                    >
+                      Close
+                    </button>
+                    {statusModal.req && (
+                      <button
+                        onClick={() => handleCheckStatus(statusModal.req!)}
+                        className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-brand/40 bg-brand/10 hover:bg-brand/20 text-brand font-semibold py-2.5 text-sm transition-colors"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" /> Retry
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* Error */}
+              {!statusModal.loading && statusModal.action === "error" && (
+                <>
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10">
+                    <Info className="h-7 w-7 text-destructive" />
+                  </div>
+                  <div>
+                    <p className="text-base font-bold text-foreground">Check Failed</p>
+                    <p className="text-xs text-muted-foreground mt-1">{statusModal.reason}</p>
+                  </div>
+                  <button
+                    onClick={() => setStatusModal(m => ({ ...m, open: false }))}
+                    className="w-full rounded-lg border border-border bg-secondary hover:bg-secondary/80 text-foreground font-semibold py-2.5 text-sm transition-colors"
+                  >
+                    Close
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -680,27 +705,28 @@ export default function FundRequestsPage() {
                         <td className={cn(TABLE.tdMuted, "whitespace-nowrap")}>{fmt(req.createdAt)}</td>
                         <td className={TABLE.td}>
                           <div className="flex items-center gap-1.5">
+                            {/* Payment Done: any draft → moves to pending immediately */}
                             {req.status === "draft" && (
                               <button
-                                onClick={() => handleOpenUtrModal(req)}
-                                className="rounded-md bg-brand hover:bg-brand/90 text-primary-foreground text-xs font-semibold px-3 py-1.5 transition-colors whitespace-nowrap"
+                                onClick={() => handlePaymentDone(req)}
+                                disabled={submittingId === req._id}
+                                className="flex items-center gap-1 rounded-md bg-brand hover:bg-brand/90 disabled:opacity-60 text-primary-foreground text-xs font-semibold px-3 py-1.5 transition-colors whitespace-nowrap"
                               >
-                                Payment Done
+                                {submittingId === req._id && <Loader2 className="h-3 w-3 animate-spin" />}
+                                {submittingId === req._id ? "Submitting…" : "Payment Done"}
                               </button>
                             )}
+                            {/* Check Status: UPI or card with orderId, in draft/pending */}
                             {(req.paymentMethod === "upi" || req.paymentMethod === "card") &&
                               req.orderId &&
                               ["draft", "pending"].includes(req.status) && (
                               <button
                                 onClick={() => handleCheckStatus(req)}
-                                disabled={checkingId === req._id}
                                 title="Check payment status with gateway"
-                                className="flex items-center gap-1 rounded-md border border-border bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground text-xs font-medium px-2.5 py-1.5 transition-colors whitespace-nowrap disabled:opacity-50"
+                                className="flex items-center gap-1 rounded-md border border-border bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground text-xs font-medium px-2.5 py-1.5 transition-colors whitespace-nowrap"
                               >
-                                {checkingId === req._id
-                                  ? <Loader2 className="h-3 w-3 animate-spin" />
-                                  : <RefreshCw className="h-3 w-3" />}
-                                {checkingId === req._id ? "Checking…" : "Check Status"}
+                                <RefreshCw className="h-3 w-3" />
+                                Check Status
                               </button>
                             )}
                           </div>
