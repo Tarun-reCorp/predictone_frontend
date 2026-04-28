@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, ExternalLink, Clock, BarChart2, Droplets, Users } from "lucide-react";
@@ -16,7 +16,6 @@ import { FeaturedMarket } from "@/components/featured-market";
 import { MarketCard } from "@/components/market-card";
 import { OrderBook } from "@/components/order-book";
 import { Header } from "@/components/header";
-import { BuyModal } from "@/components/buy-modal";
 import { AuthModal } from "@/components/auth-modal";
 import { OrderSuccessModal } from "@/components/order-success-modal";
 import { useOrder } from "@/hooks/use-order";
@@ -37,24 +36,24 @@ export default function MarketPage() {
     isLoggedIn,
   } = useOrder();
 
+
   // Success popup state
   const [successModal, setSuccessModal] = useState<{
     open: boolean; outcome: "Yes" | "No" | null; amount: number;
   }>({ open: false, outcome: null, amount: 0 });
 
-  // Buy modal state (used only by Outcomes section buttons)
-  const [buyOutcome, setBuyOutcome]     = useState<"Yes" | "No" | null>(null);
-  const [buyAmount, setBuyAmount]       = useState<number>(0);
-  const [buyModalOpen, setBuyModalOpen] = useState(false);
-  const [authModal, setAuthModal]       = useState<{ open: boolean; tab: "login" | "signup" }>({ open: false, tab: "login" });
+  // Shared trade type — controlled from both FeaturedMarket toggle and Outcomes buttons
+  const [tradeType, setTradeType] = useState<"yes" | "no">("yes");
+  const featuredRef = useRef<HTMLDivElement>(null);
+  const [authModal, setAuthModal] = useState<{ open: boolean; tab: "login" | "signup" }>({ open: false, tab: "login" });
 
-  const openBuy = (outcome: "Yes" | "No", amount = 0) => {
-    setBuyOutcome(outcome);
-    setBuyAmount(amount);
-    setBuyModalOpen(true);
+  // Outcomes "Buy" button → switch FeaturedMarket to the right side and scroll to it
+  const handleOutcomeBuy = (outcome: "Yes" | "No") => {
+    setTradeType(outcome === "Yes" ? "yes" : "no");
+    featuredRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   };
 
-  // Direct buy — opens modal first so it can observe isPlacing true→false transition
+  // Direct buy — shows loading modal, places order, transitions to success/error
   const handleFeaturedBuy = async (outcome: "Yes" | "No", amount: number) => {
     if (!isLoggedIn) {
       setAuthModal({ open: true, tab: "login" });
@@ -62,15 +61,17 @@ export default function MarketPage() {
     }
     if (!market) return;
     clearFeaturedError();
-    // Open modal BEFORE placing so OrderSuccessModal sees isPlacing go true→false
     setSuccessModal({ open: true, outcome, amount });
     try {
-      await placeOrder({
-        marketId: market.id || market.conditionId,
-        outcome,
-        amount,
-        marketQuestion: market.question,
-      });
+      await Promise.all([
+        placeOrder({
+          marketId: market.id || market.conditionId,
+          outcome,
+          amount,
+          marketQuestion: market.question,
+        }),
+        new Promise((r) => setTimeout(r, 5000)),
+      ]);
     } catch {
       // error captured by useOrder; modal transitions to error phase automatically
     }
@@ -87,13 +88,6 @@ export default function MarketPage() {
         return;
       }
       setMarket(m);
-
-      // Auto-open buy modal if ?buy=yes or ?buy=no in URL (e.g. coming from market card)
-      if (typeof window !== "undefined") {
-        const buyParam = new URLSearchParams(window.location.search).get("buy");
-        if (buyParam === "yes") { setBuyOutcome("Yes"); setBuyModalOpen(true); }
-        else if (buyParam === "no") { setBuyOutcome("No"); setBuyModalOpen(true); }
-      }
 
       const allMarkets = await clientFetchMarkets({ limit: 10, active: true, order: "volume", ascending: false });
       setRelated(allMarkets.filter((x) => x.conditionId !== m.conditionId).slice(0, 4));
@@ -161,13 +155,17 @@ export default function MarketPage() {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
           {/* Main content */}
           <div className="lg:col-span-3 space-y-6">
-            <FeaturedMarket
-              market={market}
-              onBuy={handleFeaturedBuy}
-              isLoggedIn={isLoggedIn}
-              isPlacing={isFeaturedPlacing}
-              placeError={featuredError}
-            />
+            <div ref={featuredRef}>
+              <FeaturedMarket
+                market={market}
+                onBuy={handleFeaturedBuy}
+                isLoggedIn={isLoggedIn}
+                isPlacing={isFeaturedPlacing}
+                placeError={featuredError}
+                tradeType={tradeType}
+                onTradeTypeChange={setTradeType}
+              />
+            </div>
 
             {/* Stats row */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -228,17 +226,17 @@ export default function MarketPage() {
                         </div>
                       </div>
                       {market.conditionId && (
-                      <button
-                        onClick={() => openBuy(typedOutcome)}
-                        className={`shrink-0 rounded-lg px-4 py-1.5 text-sm font-semibold transition-all ${
-                          isYes
-                            ? "bg-yes/10 text-yes border border-yes/20 hover:bg-yes/20 active:bg-yes/30"
-                            : "bg-no/10  text-no  border border-no/20  hover:bg-no/20  active:bg-no/30"
-                        }`}
-                      >
-                        Buy ${price.toFixed(2)}
-                      </button>
-                    )}
+                        <button
+                          onClick={() => handleOutcomeBuy(typedOutcome)}
+                          className={`shrink-0 rounded-lg px-4 py-1.5 text-sm font-semibold transition-all ${
+                            isYes
+                              ? "bg-yes/10 text-yes border border-yes/20 hover:bg-yes/20 active:bg-yes/30"
+                              : "bg-no/10  text-no  border border-no/20  hover:bg-no/20  active:bg-no/30"
+                          }`}
+                        >
+                          Buy ${price.toFixed(2)}
+                        </button>
+                      )}
                     </div>
                   );
                 })}
@@ -296,22 +294,6 @@ export default function MarketPage() {
           </div>
         )}
       </main>
-
-      {/* ── Buy Modal ── */}
-      {(market.id || market.conditionId) && (
-        <BuyModal
-          open={buyModalOpen}
-          onClose={() => setBuyModalOpen(false)}
-          outcome={buyOutcome}
-          marketId={market.id || market.conditionId}
-          marketQuestion={market.question}
-          initialAmount={buyAmount}
-          onLoginRequired={() => setAuthModal({ open: true, tab: "login" })}
-          onWalletRequired={() => {
-            window.location.href = "/merchant";
-          }}
-        />
-      )}
 
       {/* ── Order Success / Error Modal ── */}
       <OrderSuccessModal

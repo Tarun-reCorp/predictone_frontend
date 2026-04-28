@@ -7,7 +7,7 @@ import {
   ChevronLeft, ChevronRight, Loader2, Plus, X,
   CalendarClock, ListChecks, FileText, Download,
   QrCode, CreditCard, Bitcoin, AlertTriangle, RefreshCw,
-  Info,
+  Info, ImageIcon, Upload,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { useAuth } from "@/contexts/auth-context";
@@ -25,6 +25,7 @@ interface FundRequest {
   merchantNote?: string;
   orderId?: string;
   paymentMethod?: "upi" | "card" | "crypto" | "manual";
+  paymentImage?: string;
   status: "draft" | "pending" | "approved" | "rejected";
   adminNote?: string;
   createdAt: string;
@@ -83,6 +84,9 @@ export default function FundRequestsPage() {
   const [ref, setRef]             = useState("");
   const [note, setNote]           = useState("");
   const [method, setMethod]       = useState<"upi" | "card" | "crypto" | "manual">("manual");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [viewImage, setViewImage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError]   = useState("");
   const [formSuccess, setFormSuccess] = useState("");
@@ -249,6 +253,24 @@ export default function FundRequestsPage() {
     })();
   }, [searchParams, token, load]);
 
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    setImageFile(file);
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => setImagePreview(reader.result as string);
+      reader.readAsDataURL(file);
+    } else {
+      setImagePreview(null);
+    }
+  };
+
+  const resetForm = () => {
+    setAmount(""); setRef(""); setNote(""); setMethod("manual");
+    setImageFile(null); setImagePreview(null);
+    setFormError(""); setFormSuccess("");
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(""); setFormSuccess("");
@@ -256,16 +278,23 @@ export default function FundRequestsPage() {
     if (!amt || amt <= 0) { setFormError("Please enter a valid amount"); return; }
     setSubmitting(true);
     try {
+      const fd = new FormData();
+      fd.append("amount", String(amt));
+      fd.append("paymentMethod", method);
+      if (ref.trim())  fd.append("paymentReference", ref.trim());
+      if (note.trim()) fd.append("merchantNote", note.trim());
+      if (imageFile)   fd.append("paymentImage", imageFile);
+
       const res = await fetch(`${API}/api/merchant/fund-requests`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ amount: amt, paymentReference: ref, merchantNote: note, paymentMethod: method }),
+        headers: { Authorization: `Bearer ${token}` }, // no Content-Type — let browser set multipart boundary
+        body: fd,
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message ?? "Failed");
       setFormSuccess("Fund request submitted! Admin will review it.");
-      setAmount(""); setRef(""); setNote(""); setMethod("manual");
-      setTimeout(() => { setShowForm(false); setFormSuccess(""); load(); }, 1500);
+      resetForm();
+      setTimeout(() => { setShowForm(false); load(); }, 1500);
     } catch (err: unknown) {
       setFormError(err instanceof Error ? err.message : "Failed to submit");
     } finally { setSubmitting(false); }
@@ -439,7 +468,7 @@ export default function FundRequestsPage() {
           <div className="w-full max-w-md rounded-2xl border border-border bg-card shadow-2xl">
             <div className="flex items-center justify-between border-b border-border px-6 py-4">
               <h2 className="text-base font-bold text-foreground">New Fund Request</h2>
-              <button onClick={() => setShowForm(false)} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+              <button onClick={() => { setShowForm(false); resetForm(); }} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
             </div>
             <form onSubmit={handleSubmit} className="p-6 flex flex-col gap-4">
               {formError && <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-4 py-2.5 text-sm text-destructive">{formError}</div>}
@@ -489,8 +518,43 @@ export default function FundRequestsPage() {
                 />
               </div>
 
+              {/* Payment screenshot (optional) */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-foreground">
+                  Payment Screenshot <span className="text-xs text-muted-foreground font-normal">(optional)</span>
+                </label>
+                {imagePreview ? (
+                  <div className="relative">
+                    <img
+                      src={imagePreview}
+                      alt="Preview"
+                      className="w-full max-h-40 object-contain rounded-lg border border-border bg-secondary"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => { setImageFile(null); setImagePreview(null); }}
+                      className="absolute top-1.5 right-1.5 rounded-full bg-black/60 p-1 text-white hover:bg-black/80 transition-colors"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <label className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border bg-secondary/50 px-4 py-5 cursor-pointer hover:border-brand/40 hover:bg-secondary transition-colors">
+                    <Upload className="h-5 w-5 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">Click to upload image (max 5MB)</span>
+                    <span className="text-[10px] text-muted-foreground/60">JPEG, PNG, GIF, WEBP</span>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+                      onChange={handleImageChange}
+                      className="hidden"
+                    />
+                  </label>
+                )}
+              </div>
+
               <div className="flex gap-3 pt-1">
-                <button type="button" onClick={() => setShowForm(false)}
+                <button type="button" onClick={() => { setShowForm(false); resetForm(); }}
                   className="flex-1 rounded-lg border border-border bg-secondary hover:bg-secondary/80 py-2.5 text-sm font-medium text-foreground transition-colors">
                   Cancel
                 </button>
@@ -660,6 +724,7 @@ export default function FundRequestsPage() {
                     <th className={TABLE.th}>Order ID</th>
                     <th className={TABLE.th}>UTR / Ref</th>
                     <th className={TABLE.th}>Note</th>
+                    <th className={TABLE.th}>Image</th>
                     <th className={TABLE.th}>Status</th>
                     <th className={TABLE.th}>Admin Note</th>
                     <th className={TABLE.th}>Date</th>
@@ -693,6 +758,18 @@ export default function FundRequestsPage() {
                         </td>
                         <td className={cn(TABLE.tdMuted, "max-w-[180px]")}>
                           <p className="truncate">{req.merchantNote || "—"}</p>
+                        </td>
+                        <td className={TABLE.td}>
+                          {req.paymentImage ? (
+                            <button
+                              onClick={() => setViewImage(`${API}/uploads/screenshot/${req.paymentImage}`)}
+                              className="flex items-center gap-1 rounded-md border border-border bg-secondary hover:bg-secondary/80 px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                              <ImageIcon className="h-3 w-3" /> View
+                            </button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
                         </td>
                         <td className={TABLE.td}>
                           <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold", s.color, s.bg)}>
@@ -753,6 +830,27 @@ export default function FundRequestsPage() {
           </>
         )}
       </div>
+      {/* ── Image viewer modal ── */}
+      {viewImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+          onClick={() => setViewImage(null)}
+        >
+          <div className="relative max-w-2xl w-full" onClick={e => e.stopPropagation()}>
+            <button
+              onClick={() => setViewImage(null)}
+              className="absolute -top-10 right-0 text-white/70 hover:text-white transition-colors"
+            >
+              <X className="h-6 w-6" />
+            </button>
+            <img
+              src={viewImage}
+              alt="Payment screenshot"
+              className="w-full rounded-xl border border-border shadow-2xl object-contain max-h-[80vh]"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

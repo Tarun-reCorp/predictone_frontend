@@ -45,7 +45,8 @@ const FUND_TABS: { key: FundTab; label: string; icon: React.ElementType; disable
   { key: "card",   label: "Card",   icon: CreditCard },
 ];
 
-const PRESETS = [100, 500, 1000, 5000];
+const PRESETS = [5, 10, 25, 50];
+const USD_TO_INR = parseFloat(process.env.NEXT_PUBLIC_USD_TO_INR_RATE ?? "94");
 
 const CRYPTO_WALLET = "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18";
 const CRYPTO_NETWORK = "Polygon (MATIC)";
@@ -106,8 +107,8 @@ export default function MerchantWalletPage() {
 
   const handleUpiPayin = async () => {
     const amt = parseFloat(upiAmount);
-    if (!amt || amt < 1) { setUpiError("Minimum amount is ₹1"); return; }
-    if (amt > 100000) { setUpiError("Maximum amount is ₹1,00,000"); return; }
+    if (!amt || amt < 1) { setUpiError("Minimum amount is $1"); return; }
+    if (amt > 10000) { setUpiError("Maximum amount is $10,000"); return; }
 
     setUpiError(null);
     setUpiLoading(true);
@@ -334,14 +335,21 @@ export default function MerchantWalletPage() {
                     </div>
 
                     <div className="space-y-3">
-                      <label className="text-xs font-medium text-muted-foreground">Amount (INR)</label>
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-medium text-muted-foreground">Amount (USD)</label>
+                        {upiAmount && parseFloat(upiAmount) > 0 && (
+                          <span className="text-xs text-muted-foreground font-mono">
+                            = ₹{Math.round(parseFloat(upiAmount) * USD_TO_INR).toLocaleString("en-IN")}
+                          </span>
+                        )}
+                      </div>
                       <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground font-mono">₹</span>
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground font-mono">$</span>
                         <input
                           type="number"
                           min={1}
-                          max={100000}
-                          step="1"
+                          max={10000}
+                          step="0.01"
                           placeholder="Enter amount"
                           value={upiAmount}
                           onChange={(e) => { setUpiAmount(e.target.value); setUpiError(null); }}
@@ -361,7 +369,7 @@ export default function MerchantWalletPage() {
                                 : "border-border bg-secondary text-muted-foreground hover:text-foreground"
                             )}
                           >
-                            ₹{amt.toLocaleString("en-IN")}
+                            ${amt}
                           </button>
                         ))}
                       </div>
@@ -393,7 +401,8 @@ export default function MerchantWalletPage() {
                     <div className="text-center">
                       <h3 className="text-base font-semibold text-foreground">Payment Ready</h3>
                       <p className="text-xs text-muted-foreground mt-1">
-                        Amount: <span className="font-mono font-semibold text-foreground">₹{upiAmount}</span>
+                        Amount: <span className="font-mono font-semibold text-foreground">${upiAmount}</span>
+                        <span className="text-muted-foreground"> (₹{Math.round(parseFloat(upiAmount || "0") * USD_TO_INR).toLocaleString("en-IN")})</span>
                       </p>
                     </div>
 
@@ -608,6 +617,7 @@ export default function MerchantWalletPage() {
                       <h3 className="text-base font-semibold text-foreground">Payment Ready</h3>
                       <p className="text-xs text-muted-foreground mt-1">
                         Amount: <span className="font-mono font-semibold text-foreground">${cardAmount}</span>
+                        <span className="text-muted-foreground"> (₹{Math.round(parseFloat(cardAmount || "0") * USD_TO_INR).toLocaleString("en-IN")})</span>
                       </p>
                     </div>
 

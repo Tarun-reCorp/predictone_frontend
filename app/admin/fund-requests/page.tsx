@@ -5,7 +5,7 @@ import {
   ArrowUpCircle, Clock, CheckCircle2, XCircle,
   ChevronLeft, ChevronRight, Loader2, Search, X, Download,
   CalendarClock, ListChecks, QrCode, CreditCard, Bitcoin, FileText,
-  RefreshCw,
+  RefreshCw, ImageIcon,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { useAuth } from "@/contexts/auth-context";
@@ -24,6 +24,7 @@ interface FundRequest {
   paymentMethod?: "upi" | "card" | "crypto" | "manual";
   paymentReference?: string;
   merchantNote?: string;
+  paymentImage?: string;
   status: "pending" | "approved" | "rejected";
   adminNote?: string;
   reviewedBy?: { name: string };
@@ -104,6 +105,9 @@ export default function AdminFundRequestsPage() {
   // Status check
   const [checkingId, setCheckingId]         = useState<string | null>(null);
   const [statusResult, setStatusResult]     = useState<{ action: string; gwStatus: string; orderId: string } | null>(null);
+
+  // Image viewer
+  const [viewImage, setViewImage] = useState<string | null>(null);
 
   const activeCount = Object.values(filters).filter(v => v !== "").length;
 
@@ -372,6 +376,17 @@ export default function AdminFundRequestsPage() {
                     );
                   })()}
                 </div>
+                {reviewing.paymentImage && (
+                  <div className="px-4 py-3 flex flex-col gap-2">
+                    <span className="text-xs text-muted-foreground">Payment Screenshot</span>
+                    <img
+                      src={`${API}/uploads/screenshot/${reviewing.paymentImage}`}
+                      alt="Payment screenshot"
+                      onClick={() => setViewImage(`${API}/uploads/screenshot/${reviewing.paymentImage}`)}
+                      className="w-full max-h-48 object-contain rounded-lg border border-border cursor-pointer hover:opacity-90 transition-opacity"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-2">
@@ -487,6 +502,7 @@ export default function AdminFundRequestsPage() {
                     <th className={TABLE.th}>Method</th>
                     <th className={TABLE.th}>Order ID</th>
                     <th className={TABLE.th}>UTR / Ref</th>
+                    <th className={TABLE.th}>Image</th>
                     <th className={TABLE.th}>Status</th>
                     <th className={TABLE.thRight}>Balance</th>
                     <th className={TABLE.th}>Submitted</th>
@@ -522,6 +538,18 @@ export default function AdminFundRequestsPage() {
                         </td>
                         <td className={cn(TABLE.tdMuted, "max-w-[160px]")}>
                           <p className="truncate">{req.paymentReference || "—"}</p>
+                        </td>
+                        <td className={TABLE.td}>
+                          {req.paymentImage ? (
+                            <button
+                              onClick={() => setViewImage(`${API}/uploads/screenshot/${req.paymentImage}`)}
+                              className="flex items-center gap-1 rounded-md border border-border bg-secondary hover:bg-secondary/80 px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                              <ImageIcon className="h-3 w-3" /> View
+                            </button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
                         </td>
                         <td className={TABLE.td}>
                           <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold", s.color, s.bg)}>
@@ -578,6 +606,27 @@ export default function AdminFundRequestsPage() {
           </>
         )}
       </div>
+      {/* ── Image viewer modal ── */}
+      {viewImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+          onClick={() => setViewImage(null)}
+        >
+          <div className="relative max-w-2xl w-full" onClick={e => e.stopPropagation()}>
+            <button
+              onClick={() => setViewImage(null)}
+              className="absolute -top-10 right-0 text-white/70 hover:text-white transition-colors"
+            >
+              <X className="h-6 w-6" />
+            </button>
+            <img
+              src={viewImage}
+              alt="Payment screenshot"
+              className="w-full rounded-xl border border-border shadow-2xl object-contain max-h-[80vh]"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -19,10 +19,14 @@ interface FeaturedMarketProps {
   isLoggedIn?: boolean;
   isPlacing?: boolean;
   placeError?: string | null;
+  tradeType?: "yes" | "no";
+  onTradeTypeChange?: (t: "yes" | "no") => void;
 }
 
-export function FeaturedMarket({ market, onBuy, isLoggedIn, isPlacing, placeError }: FeaturedMarketProps) {
-  const [tradeType, setTradeType] = useState<"yes" | "no">("yes");
+export function FeaturedMarket({ market, onBuy, isLoggedIn, isPlacing, placeError, tradeType: tradeTypeProp, onTradeTypeChange }: FeaturedMarketProps) {
+  const [tradeTypeLocal, setTradeTypeLocal] = useState<"yes" | "no">("yes");
+  const tradeType = tradeTypeProp ?? tradeTypeLocal;
+  const setTradeType = (t: "yes" | "no") => { setTradeTypeLocal(t); onTradeTypeChange?.(t); };
   const [quantity, setQuantity]   = useState("100");
 
   const prices    = parseOutcomePrices(market.outcomePrices);
