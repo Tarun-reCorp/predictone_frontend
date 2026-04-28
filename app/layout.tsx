@@ -9,7 +9,7 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
 
 export const metadata: Metadata = {
-  title: 'PredictOne — Prediction Markets',
+  title: 'Playdict — Prediction Markets',
   description: 'Trade on the outcomes of real-world events. The most powerful prediction market platform.',
   generator: 'v0.app',
   icons: {

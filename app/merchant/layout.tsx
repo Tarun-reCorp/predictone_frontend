@@ -177,7 +177,7 @@ export default function MerchantLayout({ children }: { children: React.ReactNode
       <div className="flex flex-col flex-1 min-w-0">
         <header className="flex h-14 items-center justify-between border-b border-border px-6 bg-background/80 backdrop-blur-sm sticky top-0 z-40">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Link href="/" className="hover:text-foreground transition-colors">PredictOne</Link>
+            <Link href="/" className="hover:text-foreground transition-colors">Playdict</Link>
             <ChevronRight className="h-3.5 w-3.5" />
             <span className="text-foreground font-medium">{breadcrumb}</span>
           </div>

@@ -168,7 +168,7 @@ export default function AdminSettings() {
         <div className="px-5 py-4">
           <p className="text-xs text-muted-foreground leading-relaxed">
             Trading endpoints on the Polymarket CLOB API require L1 (Ethereum wallet signature) authentication.
-            PredictOne currently uses only{" "}
+            Playdict currently uses only{" "}
             <span className="text-foreground font-semibold">public read-only endpoints</span> — no authentication is required for browsing markets, price history, or the order book.
           </p>
           <div className="mt-4 rounded-lg border border-border bg-secondary/50 px-4 py-3 text-xs text-muted-foreground">

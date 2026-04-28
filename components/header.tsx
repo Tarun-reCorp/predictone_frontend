@@ -20,6 +20,12 @@ const NAV_CATEGORIES = [
   { label: "Tech", slug: "tech" },
   { label: "AI", slug: "ai" },
   { label: "Economy", slug: "economy" },
+  { label: "Culture", slug: "culture" },
+  { label: "Entertainment", slug: "entertainment" },
+  { label: "Business", slug: "business" },
+  { label: "Science", slug: "science" },
+  { label: "Health", slug: "health" },
+  { label: "World News", slug: "world-news" },
   { label: "Other", slug: "other" },
 ];
 
@@ -119,7 +125,7 @@ export function Header({ activeCategory = "", onCategoryChange, onSearch }: Head
               <TrendingUp className="h-4 w-4 text-primary-foreground" />
             </div>
             <span className="hidden font-bold text-foreground text-lg sm:block tracking-tight">
-              Predict<span className="text-brand">One</span>
+              Play<span className="text-brand">dict</span>
             </span>
           </Link>
 
