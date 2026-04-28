@@ -5,6 +5,7 @@ import {
   ArrowUpCircle, Clock, CheckCircle2, XCircle,
   ChevronLeft, ChevronRight, Loader2, Search, X, Download,
   CalendarClock, ListChecks, QrCode, CreditCard, Bitcoin, FileText,
+  RefreshCw,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { useAuth } from "@/contexts/auth-context";
@@ -100,6 +101,10 @@ export default function AdminFundRequestsPage() {
   const [submitting, setSubmitting]   = useState(false);
   const [reviewError, setReviewError] = useState("");
 
+  // Status check
+  const [checkingId, setCheckingId]         = useState<string | null>(null);
+  const [statusResult, setStatusResult]     = useState<{ action: string; gwStatus: string; orderId: string } | null>(null);
+
   const activeCount = Object.values(filters).filter(v => v !== "").length;
 
   const applyDatePreset = (preset: typeof datePreset) => {
@@ -171,6 +176,26 @@ export default function AdminFundRequestsPage() {
     } catch (err: unknown) {
       setReviewError(err instanceof Error ? err.message : "Failed");
     } finally { setSubmitting(false); }
+  };
+
+  const handleCheckStatus = async (req: FundRequest) => {
+    if (!req.orderId) return;
+    setCheckingId(req._id);
+    try {
+      const res = await fetch(`${API}/api/admin/fund-requests/check-by-order-id`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ orderId: req.orderId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message ?? "Failed");
+      setStatusResult({ action: data.data?.action ?? "pending", gwStatus: data.data?.gwStatus ?? "unknown", orderId: req.orderId });
+      fetchData(page, filters);
+    } catch (err: unknown) {
+      setStatusResult({ action: "error", gwStatus: err instanceof Error ? err.message : "Failed", orderId: req.orderId ?? "" });
+    } finally {
+      setCheckingId(null);
+    }
   };
 
   const exportToExcel = async () => {
@@ -388,6 +413,54 @@ export default function AdminFundRequestsPage() {
         </div>
       )}
 
+      {/* Status check result modal */}
+      {statusResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-border bg-card shadow-2xl">
+            <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+              <h2 className="text-base font-bold text-foreground">Gateway Status Result</h2>
+              <button onClick={() => setStatusResult(null)} className="text-muted-foreground hover:text-foreground transition-colors">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-6 flex flex-col gap-4">
+              <div className="rounded-lg border border-border bg-secondary/50 divide-y divide-border/50">
+                <div className="flex items-center justify-between px-4 py-2.5">
+                  <span className="text-xs text-muted-foreground">Order ID</span>
+                  <span className="text-xs font-mono font-medium text-foreground">{statusResult.orderId}</span>
+                </div>
+                <div className="flex items-center justify-between px-4 py-2.5">
+                  <span className="text-xs text-muted-foreground">Gateway Status</span>
+                  <span className="text-xs font-mono font-medium text-foreground uppercase">{statusResult.gwStatus}</span>
+                </div>
+                <div className="flex items-center justify-between px-4 py-2.5">
+                  <span className="text-xs text-muted-foreground">Action Taken</span>
+                  <span className={cn(
+                    "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold",
+                    statusResult.action === "approved" ? "bg-yes/15 text-yes" :
+                    statusResult.action === "rejected" ? "bg-no/15 text-no" :
+                    statusResult.action === "error"    ? "bg-destructive/15 text-destructive" :
+                    "bg-chart-4/15 text-chart-4"
+                  )}>
+                    {statusResult.action === "approved" && <CheckCircle2 className="h-3 w-3" />}
+                    {statusResult.action === "rejected" && <XCircle className="h-3 w-3" />}
+                    {statusResult.action === "pending"  && <Clock className="h-3 w-3" />}
+                    {statusResult.action.charAt(0).toUpperCase() + statusResult.action.slice(1)}
+                  </span>
+                </div>
+              </div>
+              {statusResult.action === "error" && (
+                <p className="text-xs text-destructive">{statusResult.gwStatus}</p>
+              )}
+              <button onClick={() => setStatusResult(null)}
+                className="w-full rounded-lg border border-border bg-secondary py-2.5 text-sm font-medium text-foreground hover:bg-secondary/80 transition-colors">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div className={TABLE.wrapper}>
         {loading ? (
@@ -460,10 +533,23 @@ export default function AdminFundRequestsPage() {
                         <td className={cn(TABLE.tdMuted, "whitespace-nowrap")}>{fmt(req.createdAt)}</td>
                         <td className={TABLE.td}>
                           {req.status === "pending" ? (
-                            <button onClick={() => { setReviewing(req); setAction("approved"); setAdminNote(""); setReviewError(""); }}
-                              className="flex items-center gap-1.5 rounded-md bg-brand/10 text-brand hover:bg-brand/20 px-3 py-1.5 text-xs font-semibold transition-colors">
-                              Review
-                            </button>
+                            <div className="flex flex-col gap-1.5">
+                              <button onClick={() => { setReviewing(req); setAction("approved"); setAdminNote(""); setReviewError(""); }}
+                                className="flex items-center gap-1.5 rounded-md bg-brand/10 text-brand hover:bg-brand/20 px-3 py-1.5 text-xs font-semibold transition-colors">
+                                Review
+                              </button>
+                              {req.orderId && (req.paymentMethod === "upi" || req.paymentMethod === "card") && (
+                                <button
+                                  onClick={() => handleCheckStatus(req)}
+                                  disabled={checkingId === req._id}
+                                  className="flex items-center gap-1.5 rounded-md bg-chart-4/10 text-chart-4 hover:bg-chart-4/20 px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50">
+                                  {checkingId === req._id
+                                    ? <Loader2 className="h-3 w-3 animate-spin" />
+                                    : <RefreshCw className="h-3 w-3" />}
+                                  {checkingId === req._id ? "Checking…" : "Check Status"}
+                                </button>
+                              )}
+                            </div>
                           ) : (
                             <span className="text-xs text-muted-foreground">
                               {req.reviewedBy?.name && `by ${req.reviewedBy.name}`}
