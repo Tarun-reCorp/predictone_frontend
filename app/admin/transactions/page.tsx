@@ -21,6 +21,8 @@ interface AdminTransaction {
   balanceAfter: number;
   description?: string;
   createdAt: string;
+  refModel?: string | null;
+  refId?: { orderNumber?: string } | null;
 }
 
 const TX_META: Record<string, { label: string; color: string; bg: string; icon: React.ElementType }> = {
@@ -143,6 +145,7 @@ export default function AdminTransactionsPage() {
           "Merchant":       user?.name  ?? "—",
           "Email":          user?.email ?? "—",
           "Type":           TX_META[tx.type]?.label ?? tx.type.replace(/_/g, " "),
+          "Order ID":       tx.refModel === "Order" ? (tx.refId?.orderNumber ?? "—") : "—",
           "Amount ($)":     tx.amount,
           "Balance After":  tx.balanceAfter,
           "Description":    tx.description ?? "—",
@@ -154,7 +157,7 @@ export default function AdminTransactionsPage() {
       const ws = XLSX.utils.json_to_sheet(sheet);
       ws["!cols"] = [
         { wch: 5 }, { wch: 20 }, { wch: 26 }, { wch: 18 },
-        { wch: 12 }, { wch: 14 }, { wch: 32 }, { wch: 22 },
+        { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 32 }, { wch: 22 },
       ];
       XLSX.utils.book_append_sheet(wb, ws, "Transactions");
       XLSX.writeFile(wb, `transactions_${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -262,8 +265,23 @@ export default function AdminTransactionsPage() {
       {/* ── Table ── */}
       <div className="rounded-xl border border-border bg-card overflow-hidden">
         {loading ? (
-          <div className="flex items-center justify-center py-16">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <tbody className="divide-y divide-border/60">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <tr key={i} className="animate-pulse">
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-6 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-28 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-6 w-24 rounded-lg bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-16 rounded bg-secondary ml-auto" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-16 rounded bg-secondary ml-auto" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-40 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-24 rounded bg-secondary" /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : txns.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-2 text-center">
@@ -281,7 +299,7 @@ export default function AdminTransactionsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-secondary/30">
-                    {["#", "Merchant", "Type", "Amount", "Balance After", "Description", "Date"].map((h) => (
+                    {["#", "Merchant", "Type", "Order ID", "Amount", "Balance After", "Description", "Date"].map((h) => (
                       <th key={h} className={cn(
                         "px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground",
                         h === "Amount" || h === "Balance After" ? "text-right" : "text-left"
@@ -308,6 +326,13 @@ export default function AdminTransactionsPage() {
                             </div>
                             <span className={cn("text-sm font-medium capitalize", meta.color)}>{meta.label}</span>
                           </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          {tx.refModel === "Order" && tx.refId?.orderNumber ? (
+                            <span className="text-xs font-mono text-brand font-semibold">{tx.refId.orderNumber}</span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-right">
                           <span className={cn("text-sm font-bold font-mono", isCredit ? "text-yes" : "text-no")}>

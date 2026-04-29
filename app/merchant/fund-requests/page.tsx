@@ -73,6 +73,7 @@ export default function FundRequestsPage() {
   const [dateFrom, setDateFrom]           = useState("");
   const [dateTo, setDateTo]               = useState("");
   const [datePreset, setDatePreset]       = useState<"all"|"today"|"week"|"month">("all");
+  const [total, setTotal]                 = useState(0);
   const [exporting, setExporting]         = useState(false);
   const [autoRejectMsg, setAutoRejectMsg] = useState<string | null>(null);
   const [submittingId, setSubmittingId] = useState<string | null>(null);
@@ -102,10 +103,10 @@ export default function FundRequestsPage() {
     amount: number;
   }>({ open: false, loading: false, req: null, action: null, gwStatus: "", reason: "", amount: 0 });
 
-  const load = useCallback(() => {
+  const load = useCallback((pageNum: number, signal?: AbortSignal) => {
     if (!token) return;
     setLoading(true);
-    const q = new URLSearchParams({ page: String(page), limit: "15" });
+    const q = new URLSearchParams({ page: String(pageNum), limit: "15" });
     if (filterStatus) q.set("status",        filterStatus);
     if (filterMethod) q.set("paymentMethod", filterMethod);
     if (minAmount)    q.set("minAmount",     minAmount);
@@ -114,19 +115,24 @@ export default function FundRequestsPage() {
     if (dateTo)       q.set("dateTo",        dateTo);
 
     Promise.all([
-      fetch(`${API}/api/merchant/fund-requests?${q}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+      fetch(`${API}/api/merchant/fund-requests?${q}`, { headers: { Authorization: `Bearer ${token}` }, signal }).then(r => r.json()),
       fetch(`${API}/api/merchant/fund-requests/summary`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
     ])
       .then(([list, sum]) => {
         setRequests(list.data ?? []);
         setTotalPages(list.meta?.totalPages ?? 1);
+        setTotal(list.meta?.total ?? 0);
         if (sum?.data) setSummary(sum.data);
       })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [token, page, filterStatus, filterMethod, minAmount, maxAmount, dateFrom, dateTo]);
+      .catch(err => { if (err.name !== "AbortError") setRequests([]); })
+      .finally(() => { if (!signal?.aborted) setLoading(false); });
+  }, [token, filterStatus, filterMethod, minAmount, maxAmount, dateFrom, dateTo]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const controller = new AbortController();
+    const t = setTimeout(() => load(page, controller.signal), 400);
+    return () => { clearTimeout(t); controller.abort(); };
+  }, [page, load]);
 
   const applyDatePreset = (preset: typeof datePreset) => {
     setDatePreset(preset); setPage(1);
@@ -228,7 +234,7 @@ export default function FundRequestsPage() {
             body: JSON.stringify({ reason }),
           });
           setAutoRejectMsg(`Card payment failed: ${reason}`);
-          load();
+          load(page);
         } else if (SUCCESS.includes(payStatus)) {
           // Auto-approve via check-and-settle (payment_status is the reliable success field)
           const settleRes = await fetch(`${API}/api/merchant/fund-requests/${matched._id}/check-and-settle`, {
@@ -244,7 +250,7 @@ export default function FundRequestsPage() {
             reason: reason ?? "",
             amount: matched.amount,
           });
-          load();
+          load(page);
         }
         // If status is unknown / pending → leave as draft, merchant can click "Check Status"
       } catch {
@@ -294,7 +300,7 @@ export default function FundRequestsPage() {
       if (!res.ok) throw new Error(data.message ?? "Failed");
       setFormSuccess("Fund request submitted! Admin will review it.");
       resetForm();
-      setTimeout(() => { setShowForm(false); load(); }, 1500);
+      setTimeout(() => { setShowForm(false); load(page); }, 1500);
     } catch (err: unknown) {
       setFormError(err instanceof Error ? err.message : "Failed to submit");
     } finally { setSubmitting(false); }
@@ -311,7 +317,7 @@ export default function FundRequestsPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message ?? "Failed");
-      load();
+      load(page);
     } catch {
       // silently ignore — list will still reload
     } finally {
@@ -332,7 +338,7 @@ export default function FundRequestsPage() {
 
       const { action, gwStatus, reason } = data.data ?? {};
       setStatusModal(m => ({ ...m, loading: false, action: action ?? "pending", gwStatus: gwStatus ?? "", reason: reason ?? "" }));
-      load();
+      load(page);
     } catch (err: unknown) {
       setStatusModal(m => ({
         ...m, loading: false, action: "error",
@@ -360,7 +366,7 @@ export default function FundRequestsPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={exportToExcel}
-            disabled={exporting || requests.length === 0}
+            disabled={exporting || total === 0}
             className="flex items-center gap-1.5 rounded-lg border border-border bg-secondary/50 hover:bg-secondary px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors"
           >
             {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
@@ -493,10 +499,7 @@ export default function FundRequestsPage() {
                   onChange={e => setMethod(e.target.value as typeof method)}
                   className="w-full rounded-lg border border-border bg-secondary px-3 py-2.5 text-sm text-foreground outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20"
                 >
-                  <option value="upi">UPI</option>
-                  <option value="card">Card</option>
-                  <option value="crypto">Crypto</option>
-                  <option value="manual">Manual / Other</option>
+                  <option value="manual">Manual</option>
                 </select>
               </div>
 
@@ -706,7 +709,27 @@ export default function FundRequestsPage() {
           <p className="text-sm font-semibold text-foreground">Request History</p>
         </div>
         {loading ? (
-          <div className="flex justify-center py-16"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <tbody className="divide-y divide-border/60">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <tr key={i} className="animate-pulse">
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-6 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-16 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-6 w-20 rounded-full bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-24 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-32 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-10 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-6 w-16 rounded-full bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-32 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-24 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-8 rounded bg-secondary" /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : requests.length === 0 ? (
           <div className="flex flex-col items-center py-16 gap-2 text-center">
             <ArrowUpCircle className="h-9 w-9 text-muted-foreground/30" />
@@ -719,6 +742,7 @@ export default function FundRequestsPage() {
               <table className={TABLE.table}>
                 <thead>
                   <tr className={TABLE.thead}>
+                    <th className={TABLE.th}>#</th>
                     <th className={TABLE.thRight}>Amount</th>
                     <th className={TABLE.th}>Method</th>
                     <th className={TABLE.th}>Order ID</th>
@@ -732,10 +756,11 @@ export default function FundRequestsPage() {
                   </tr>
                 </thead>
                 <tbody className={TABLE.tbody}>
-                  {requests.map(req => {
+                  {requests.map((req, idx) => {
                     const s = STATUS_STYLE[req.status];
                     return (
                       <tr key={req._id} className={TABLE.row}>
+                        <td className={TABLE.tdMuted}>{(page - 1) * 15 + idx + 1}</td>
                         <td className={TABLE.tdRight}>
                           <span className="font-mono font-bold text-foreground">${req.amount.toFixed(2)}</span>
                           <span className="ml-1 text-xs text-muted-foreground">{req.currency}</span>
@@ -815,7 +840,7 @@ export default function FundRequestsPage() {
               </table>
             </div>
             <div className={TABLE.footer}>
-              <span className="text-xs text-muted-foreground">Page <b>{page}</b> of <b>{totalPages}</b></span>
+              <span className="text-xs text-muted-foreground">Page <b>{page}</b> of <b>{totalPages}</b> — {total} total</span>
               <div className="flex gap-2">
                 <button onClick={() => setPage(p => p - 1)} disabled={page <= 1}
                   className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors">

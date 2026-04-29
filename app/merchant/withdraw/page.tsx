@@ -4,8 +4,10 @@ import { useState, useEffect, useCallback } from "react";
 import {
   ArrowDownCircle, Clock, CheckCircle2, XCircle,
   ChevronLeft, ChevronRight, Loader2, Wallet,
-  Building2, QrCode, AlertCircle,
+  Building2, QrCode, AlertCircle, Download,
+  CalendarClock, ListChecks, X,
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
@@ -47,7 +49,21 @@ interface Summary {
   total: number;
 }
 
+interface Filters {
+  paymentMethod: string;
+  status:        string;
+  minAmount:     string;
+  maxAmount:     string;
+  dateFrom:      string;
+  dateTo:        string;
+}
+
 // ── Constants ──────────────────────────────────────────────────────────────────
+
+const EMPTY: Filters = {
+  paymentMethod: "", status: "",
+  minAmount: "", maxAmount: "", dateFrom: "", dateTo: "",
+};
 
 const STATUS_STYLE = {
   pending:  { label: "Pending",  color: "text-chart-4", bg: "bg-chart-4/15", icon: Clock        },
@@ -59,13 +75,6 @@ const PM_STYLE: Record<PaymentMethod, { label: string; icon: React.ElementType; 
   bank: { label: "Bank Transfer", icon: Building2, color: "text-brand",   bg: "bg-brand/15"   },
   upi:  { label: "UPI",           icon: QrCode,    color: "text-chart-4", bg: "bg-chart-4/15" },
 };
-
-const STATUS_FILTERS = [
-  { label: "All",      key: "" },
-  { label: "Pending",  key: "pending" },
-  { label: "Approved", key: "approved" },
-  { label: "Rejected", key: "rejected" },
-];
 
 const PRESETS = [100, 500, 1000, 5000];
 
@@ -85,26 +94,42 @@ function fmtAccountDetails(method: PaymentMethod, details: AccountDetails): stri
   return "—";
 }
 
+function buildParams(f: Filters, extra: Record<string, string> = {}) {
+  const q = new URLSearchParams(extra);
+  if (f.paymentMethod) q.set("paymentMethod", f.paymentMethod);
+  if (f.status)        q.set("status",        f.status);
+  if (f.minAmount)     q.set("minAmount",      f.minAmount);
+  if (f.maxAmount)     q.set("maxAmount",      f.maxAmount);
+  if (f.dateFrom)      q.set("dateFrom",       f.dateFrom);
+  if (f.dateTo)        q.set("dateTo",         f.dateTo);
+  return q;
+}
+
 // ── Main Page ──────────────────────────────────────────────────────────────────
 
 export default function MerchantWithdrawPage() {
   const { token } = useAuth();
 
-  const [balance, setBalance]   = useState<number | null>(null);
-  const [requests, setRequests] = useState<WithdrawRequest[]>([]);
-  const [summary, setSummary]   = useState<Summary>({ pending: 0, approved: 0, rejected: 0, today: 0, total: 0 });
-  const [loading, setLoading]   = useState(true);
-  const [page, setPage]         = useState(1);
+  const [balance, setBalance]       = useState<number | null>(null);
+  const [requests, setRequests]     = useState<WithdrawRequest[]>([]);
+  const [summary, setSummary]       = useState<Summary>({ pending: 0, approved: 0, rejected: 0, today: 0, total: 0 });
+  const [loading, setLoading]       = useState(true);
+  const [page, setPage]             = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [filterStatus, setFilterStatus] = useState("");
+  const [total, setTotal]           = useState(0);
+  const [filters, setFilters]       = useState<Filters>(EMPTY);
+  const [datePreset, setDatePreset] = useState<"all" | "today" | "week" | "month">("all");
+  const [exporting, setExporting]   = useState(false);
 
   // Form state
-  const [amount, setAmount]           = useState("");
-  const [method, setMethod]           = useState<PaymentMethod>("bank");
-  const [accountDetails, setDetails]  = useState<AccountDetails>({});
-  const [merchantNote, setNote]       = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [formError, setFormError]   = useState("");
+  const [amount, setAmount]          = useState("");
+  const [method, setMethod]          = useState<PaymentMethod>("bank");
+  const [accountDetails, setDetails] = useState<AccountDetails>({});
+  const [merchantNote, setNote]      = useState("");
+  const [submitting, setSubmitting]  = useState(false);
+  const [formError, setFormError]    = useState("");
+
+  const activeCount = Object.values(filters).filter(v => v !== "").length;
 
   const loadBalance = useCallback(async () => {
     if (!token) return;
@@ -117,36 +142,95 @@ export default function MerchantWithdrawPage() {
     } catch {}
   }, [token]);
 
-  const load = useCallback(async () => {
+  const applyDatePreset = (preset: typeof datePreset) => {
+    setDatePreset(preset); setPage(1);
+    const today = new Date();
+    const toStr = (d: Date) => d.toISOString().slice(0, 10);
+    if (preset === "all") {
+      setFilters(f => ({ ...f, dateFrom: "", dateTo: "" }));
+    } else if (preset === "today") {
+      const s = toStr(today);
+      setFilters(f => ({ ...f, dateFrom: s, dateTo: s }));
+    } else if (preset === "week") {
+      const from = new Date(today); from.setDate(today.getDate() - 6);
+      setFilters(f => ({ ...f, dateFrom: toStr(from), dateTo: toStr(today) }));
+    } else if (preset === "month") {
+      const from = new Date(today.getFullYear(), today.getMonth(), 1);
+      setFilters(f => ({ ...f, dateFrom: toStr(from), dateTo: toStr(today) }));
+    }
+  };
+
+  const fetchData = useCallback((pageNum: number, f: Filters, signal?: AbortSignal) => {
     if (!token) return;
     setLoading(true);
-    try {
-      const q = new URLSearchParams({ page: String(page), limit: "15" });
-      if (filterStatus) q.set("status", filterStatus);
+    const q = buildParams(f, { page: String(pageNum), limit: "15" });
 
-      const [listRes, summaryRes] = await Promise.all([
-        fetch(`${API}/api/merchant/withdraw-requests?${q}`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${API}/api/merchant/withdraw-requests/summary`,  { headers: { Authorization: `Bearer ${token}` } }),
-      ]);
-
-      const listData    = await listRes.json();
-      const summaryData = await summaryRes.json();
-
-      setRequests(listData.data ?? listData.docs ?? []);
-      setTotalPages(listData.meta?.totalPages ?? 1);
-      setSummary(summaryData.data ?? summaryData);
-    } catch {
-      setRequests([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [token, page, filterStatus]);
+    Promise.all([
+      fetch(`${API}/api/merchant/withdraw-requests?${q}`, { headers: { Authorization: `Bearer ${token}` }, signal }).then(r => r.json()),
+      fetch(`${API}/api/merchant/withdraw-requests/summary`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+    ])
+      .then(([list, sum]) => {
+        setRequests(list.data ?? list.docs ?? []);
+        setTotalPages(list.meta?.totalPages ?? 1);
+        setTotal(list.meta?.total ?? 0);
+        if (sum?.data) setSummary(sum.data);
+      })
+      .catch(err => { if (err.name !== "AbortError") setRequests([]); })
+      .finally(() => { if (!signal?.aborted) setLoading(false); });
+  }, [token]);
 
   useEffect(() => { loadBalance(); }, [loadBalance]);
-  useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const t = setTimeout(() => fetchData(page, filters, controller.signal), 400);
+    return () => { clearTimeout(t); controller.abort(); };
+  }, [page, filters, fetchData]);
+
+  const set = (key: keyof Filters) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+      setPage(1);
+      if (key === "dateFrom" || key === "dateTo") setDatePreset("all");
+      setFilters(f => ({ ...f, [key]: e.target.value }));
+    };
+
+  const clearAll = () => { setFilters(EMPTY); setPage(1); setDatePreset("all"); };
+
+  const exportToExcel = async () => {
+    if (!token) return;
+    setExporting(true);
+    try {
+      const q = buildParams(filters, { page: "1", limit: "5000" });
+      const res  = await fetch(`${API}/api/merchant/withdraw-requests?${q}`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      const rows: WithdrawRequest[] = data.data ?? data.docs ?? [];
+
+      const sheet = rows.map((r, i) => ({
+        "#":              i + 1,
+        "Amount":         r.amount,
+        "Currency":       r.currency,
+        "Method":         r.paymentMethod,
+        "Payout Details": fmtAccountDetails(r.paymentMethod, r.accountDetails),
+        "Note":           r.merchantNote ?? "—",
+        "Status":         r.status,
+        "Admin Note":     r.adminNote ?? "—",
+        "Submitted":      new Date(r.createdAt).toLocaleString("en-IN"),
+      }));
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(sheet);
+      ws["!cols"] = [
+        { wch: 5 }, { wch: 10 }, { wch: 8 }, { wch: 10 },
+        { wch: 36 }, { wch: 20 }, { wch: 10 }, { wch: 30 }, { wch: 22 },
+      ];
+      XLSX.utils.book_append_sheet(wb, ws, "Withdraw Requests");
+      XLSX.writeFile(wb, `my_withdraw_requests_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch { /* silent */ }
+    finally { setExporting(false); }
+  };
 
   const setDetail = (key: keyof AccountDetails, val: string) =>
-    setDetails((prev) => ({ ...prev, [key]: val }));
+    setDetails(prev => ({ ...prev, [key]: val }));
 
   const handleSubmit = async () => {
     setFormError("");
@@ -179,7 +263,7 @@ export default function MerchantWithdrawPage() {
       setDetails({});
       setNote("");
       await loadBalance();
-      await load();
+      fetchData(page, filters);
     } catch {
       setFormError("Request failed — please try again");
     } finally {
@@ -188,10 +272,10 @@ export default function MerchantWithdrawPage() {
   };
 
   const summaryItems: SummaryCardItem[] = [
-    { label: "Total",    value: summary.total,    icon: ArrowDownCircle, tone: "default" },
-    { label: "Pending",  value: summary.pending,  icon: Clock,           tone: "warn",   hint: "Awaiting admin review" },
-    { label: "Approved", value: summary.approved, icon: CheckCircle2,    tone: "yes"     },
-    { label: "Rejected", value: summary.rejected, icon: XCircle,         tone: "no"      },
+    { label: "Total",    value: summary.total,    icon: ListChecks,    tone: "default" },
+    { label: "Pending",  value: summary.pending,  icon: Clock,         tone: "warn",   hint: "Awaiting admin review" },
+    { label: "Approved", value: summary.approved, icon: CheckCircle2,  tone: "yes"     },
+    { label: "Today",    value: summary.today,    icon: CalendarClock, tone: "brand"   },
   ];
 
   return (
@@ -204,15 +288,17 @@ export default function MerchantWithdrawPage() {
             Request a payout from your wallet balance
           </p>
         </div>
-        {balance !== null && (
-          <div className="flex items-center gap-2 rounded-xl border border-yes/20 bg-yes/10 px-4 py-2.5">
-            <Wallet className="h-4 w-4 text-yes" />
-            <div>
-              <p className="text-[10px] text-muted-foreground leading-tight">Available Balance</p>
-              <p className="text-base font-bold font-mono text-yes leading-tight">${balance.toFixed(2)}</p>
+        <div className="flex items-center gap-2">
+          {balance !== null && (
+            <div className="flex items-center gap-2 rounded-xl border border-yes/20 bg-yes/10 px-4 py-2.5">
+              <Wallet className="h-4 w-4 text-yes" />
+              <div>
+                <p className="text-[10px] text-muted-foreground leading-tight">Available Balance</p>
+                <p className="text-base font-bold font-mono text-yes leading-tight">${balance.toFixed(2)}</p>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* ── Request Form ── */}
@@ -393,37 +479,117 @@ export default function MerchantWithdrawPage() {
         </button>
       </div>
 
-      {/* ── Summary cards ── */}
-      <SummaryCards items={summaryItems} />
+      {/* ── Date presets + Summary cards ── */}
+      <div className="space-y-2.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {(["all", "today", "week", "month"] as const).map(p => {
+            const label = { all: "All Time", today: "Today", week: "Last 7 Days", month: "This Month" }[p];
+            return (
+              <button key={p} onClick={() => applyDatePreset(p)}
+                className={cn(
+                  "rounded-full px-3 py-1 text-xs font-medium border transition-colors",
+                  datePreset === p
+                    ? "bg-brand text-white border-brand"
+                    : "bg-secondary/50 text-muted-foreground border-border hover:text-foreground hover:bg-secondary"
+                )}>
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        <SummaryCards items={summaryItems} />
+      </div>
 
-      {/* ── Filter ── */}
-      <div className="flex items-center gap-1 rounded-lg border border-border bg-secondary p-1 w-fit">
-        {STATUS_FILTERS.map((f) => (
+      {/* ── Filters + Export ── */}
+      <div className="rounded-xl border border-border bg-card px-4 py-3">
+        <div className="flex flex-wrap items-center gap-2">
+
+          {/* Method */}
+          <select value={filters.paymentMethod} onChange={set("paymentMethod")}
+            className="rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 w-32">
+            <option value="">Method</option>
+            <option value="bank">Bank</option>
+            <option value="upi">UPI</option>
+          </select>
+
+          {/* Status */}
+          <select value={filters.status} onChange={set("status")}
+            className="rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 w-36">
+            <option value="">All Status</option>
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+          </select>
+
+          {/* Amount range */}
+          <div className="flex items-center gap-1">
+            <input value={filters.minAmount} onChange={set("minAmount")} type="number" min="0"
+              placeholder="Min $"
+              className="w-20 rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 transition-colors" />
+            <span className="text-muted-foreground text-xs">–</span>
+            <input value={filters.maxAmount} onChange={set("maxAmount")} type="number" min="0"
+              placeholder="Max $"
+              className="w-20 rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 transition-colors" />
+          </div>
+
+          {/* Date range */}
+          <div className="flex items-center gap-1">
+            <input type="date" value={filters.dateFrom} onChange={set("dateFrom")}
+              className="rounded-md border border-border bg-secondary/40 px-2 h-8 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 transition-colors" />
+            <span className="text-muted-foreground text-xs">–</span>
+            <input type="date" value={filters.dateTo} onChange={set("dateTo")}
+              className="rounded-md border border-border bg-secondary/40 px-2 h-8 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 transition-colors" />
+          </div>
+
+          {activeCount > 0 && (
+            <button onClick={clearAll}
+              className="flex items-center gap-1 rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors whitespace-nowrap">
+              <X className="h-3 w-3" /> Clear ({activeCount})
+            </button>
+          )}
+
+          <div className="flex-1" />
+
           <button
-            key={f.key}
-            onClick={() => { setFilterStatus(f.key); setPage(1); }}
-            className={cn(
-              "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              filterStatus === f.key
-                ? "bg-brand text-white"
-                : "text-muted-foreground hover:text-foreground"
-            )}
+            onClick={exportToExcel}
+            disabled={exporting || total === 0}
+            className="flex items-center gap-1.5 rounded-lg border border-border bg-secondary/50 hover:bg-secondary px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors"
           >
-            {f.label}
+            {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            {exporting ? "Exporting…" : "Export Excel"}
           </button>
-        ))}
+        </div>
       </div>
 
       {/* ── Requests table ── */}
       <div className={TABLE.wrapper}>
         {loading ? (
-          <div className="flex items-center justify-center py-16">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <tbody className="divide-y divide-border/60">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <tr key={i} className="animate-pulse">
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-6 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-24 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-16 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-6 w-20 rounded-full bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-40 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-6 w-16 rounded-full bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-32 rounded bg-secondary" /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : requests.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center gap-2">
             <ArrowDownCircle className="h-8 w-8 text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">No withdraw requests found</p>
+            <p className="text-sm text-muted-foreground">
+              {activeCount > 0 ? "No requests match the filters" : "No withdraw requests found"}
+            </p>
+            {activeCount > 0 && (
+              <button onClick={clearAll} className="text-xs text-brand hover:underline mt-1">Clear filters</button>
+            )}
           </div>
         ) : (
           <>
@@ -431,8 +597,9 @@ export default function MerchantWithdrawPage() {
               <table className={TABLE.table}>
                 <thead className={TABLE.thead}>
                   <tr>
+                    <th className={TABLE.th}>#</th>
                     <th className={TABLE.th}>Date</th>
-                    <th className={TABLE.th}>Amount</th>
+                    <th className={TABLE.thRight}>Amount</th>
                     <th className={TABLE.th}>Method</th>
                     <th className={TABLE.th}>Account Details</th>
                     <th className={TABLE.th}>Status</th>
@@ -440,18 +607,17 @@ export default function MerchantWithdrawPage() {
                   </tr>
                 </thead>
                 <tbody className={TABLE.tbody}>
-                  {requests.map((r) => {
+                  {requests.map((r, idx) => {
                     const ss = STATUS_STYLE[r.status];
                     const pm = PM_STYLE[r.paymentMethod];
-                    const PMIcon = pm.icon;
+                    const PMIcon     = pm.icon;
                     const StatusIcon = ss.icon;
                     return (
                       <tr key={r._id} className={TABLE.row}>
-                        <td className={TABLE.tdMuted}>{fmt(r.createdAt)}</td>
-                        <td className={TABLE.td}>
-                          <span className="font-mono font-semibold text-foreground">
-                            ${r.amount.toFixed(2)}
-                          </span>
+                        <td className={TABLE.tdMuted}>{(page - 1) * 15 + idx + 1}</td>
+                        <td className={cn(TABLE.tdMuted, "whitespace-nowrap")}>{fmt(r.createdAt)}</td>
+                        <td className={TABLE.tdRight}>
+                          <span className="font-mono font-bold">${r.amount.toFixed(2)}</span>
                           <span className="ml-1 text-xs text-muted-foreground">{r.currency}</span>
                         </td>
                         <td className={TABLE.td}>
@@ -467,6 +633,9 @@ export default function MerchantWithdrawPage() {
                           <span className="font-mono text-xs">
                             {fmtAccountDetails(r.paymentMethod, r.accountDetails)}
                           </span>
+                          {r.merchantNote && (
+                            <p className="text-xs text-muted-foreground/70 mt-0.5 italic truncate max-w-[160px]">{r.merchantNote}</p>
+                          )}
                         </td>
                         <td className={TABLE.td}>
                           <span className={cn(
@@ -487,28 +656,28 @@ export default function MerchantWithdrawPage() {
               </table>
             </div>
 
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className={TABLE.footer}>
-                <span>Page {page} of {totalPages}</span>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setPage(page - 1)}
-                    disabled={page <= 1}
-                    className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-40 transition-colors"
-                  >
-                    <ChevronLeft className="h-3.5 w-3.5" /> Prev
-                  </button>
-                  <button
-                    onClick={() => setPage(page + 1)}
-                    disabled={page >= totalPages}
-                    className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-40 transition-colors"
-                  >
-                    Next <ChevronRight className="h-3.5 w-3.5" />
-                  </button>
-                </div>
+            {/* Pagination — always visible */}
+            <div className={TABLE.footer}>
+              <span className="text-xs text-muted-foreground">
+                Page <b>{page}</b> of <b>{totalPages}</b> — {total} total
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setPage(p => p - 1)}
+                  disabled={page <= 1}
+                  className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-40 transition-colors"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" /> Prev
+                </button>
+                <button
+                  onClick={() => setPage(p => p + 1)}
+                  disabled={page >= totalPages}
+                  className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-40 transition-colors"
+                >
+                  Next <ChevronRight className="h-3.5 w-3.5" />
+                </button>
               </div>
-            )}
+            </div>
           </>
         )}
       </div>

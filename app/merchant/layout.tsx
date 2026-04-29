@@ -5,8 +5,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   TrendingUp, LayoutDashboard, ChevronRight,
-  CircleDot, Bell, LogOut,
-  ShoppingBag, ArrowUpDown, Wallet, ArrowUpCircle, Receipt, HandCoins, ArrowDownCircle,
+  CircleDot, LogOut,
+  ShoppingBag, ArrowUpDown, Wallet, ArrowUpCircle, HandCoins, ArrowDownCircle,
   Store, User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -32,6 +32,18 @@ export default function MerchantLayout({ children }: { children: React.ReactNode
 
   const [collapsed, setCollapsed]             = useState(false);
   const [internalBalance, setInternalBalance] = useState<number | null>(null);
+  const [profileOpen, setProfileOpen]         = useState(false);
+  const profileRef                            = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setProfileOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // Auth guard
   useEffect(() => {
@@ -122,55 +134,6 @@ export default function MerchantLayout({ children }: { children: React.ReactNode
           })}
         </nav>
 
-        {/* Wallet balance pill */}
-        {internalBalance !== null && (
-          <div className={cn("px-2 pb-1", collapsed && "flex justify-center")}>
-            <div className={cn(
-              "flex items-center gap-2 rounded-md border border-yes/20 bg-yes/10 px-2.5 py-2",
-              collapsed && "justify-center"
-            )}>
-              <Receipt className="h-3.5 w-3.5 text-yes shrink-0" />
-              {!collapsed && (
-                <div className="flex-1 min-w-0">
-                  <p className="text-[10px] text-muted-foreground leading-tight">Wallet Balance</p>
-                  <p className="text-xs font-bold font-mono text-yes leading-tight">
-                    ${internalBalance.toFixed(2)}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* User footer */}
-        <div className="p-2 border-t border-border">
-          {!collapsed ? (
-            <div className="flex items-center gap-2 rounded-md px-2.5 py-2">
-              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-brand text-primary-foreground text-[10px] font-bold shrink-0">
-                {initials}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold text-foreground truncate">{user.name}</p>
-                <p className="text-[10px] text-muted-foreground truncate">{user.email}</p>
-              </div>
-              <button
-                onClick={() => { logout(); router.replace("/"); }}
-                title="Log Out"
-                className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-secondary transition-colors shrink-0"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => { logout(); router.replace("/"); }}
-              className="flex w-full items-center justify-center p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-secondary transition-colors"
-              title="Log Out"
-            >
-              <LogOut className="h-4 w-4" />
-            </button>
-          )}
-        </div>
       </aside>
 
       {/* ── Main ── */}
@@ -209,11 +172,38 @@ export default function MerchantLayout({ children }: { children: React.ReactNode
               <CircleDot className="h-3 w-3 text-yes" />
               <span className="text-xs font-medium text-yes">Active</span>
             </div>
-            <button className="relative flex h-8 w-8 items-center justify-center rounded-md border border-border hover:bg-secondary transition-colors">
-              <Bell className="h-4 w-4 text-muted-foreground" />
-            </button>
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand text-primary-foreground text-xs font-bold">
-              {initials}
+            {/* Profile dropdown */}
+            <div className="relative" ref={profileRef}>
+              <button
+                onClick={() => setProfileOpen(o => !o)}
+                className="flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-secondary transition-colors"
+              >
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-brand text-primary-foreground text-xs font-bold shrink-0">
+                  {initials}
+                </div>
+                <span className="text-sm font-medium text-foreground">{user.name}</span>
+                <ChevronRight className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform", profileOpen ? "-rotate-90" : "rotate-90")} />
+              </button>
+              {profileOpen && (
+                <div className="absolute right-0 top-11 w-56 rounded-xl border border-border bg-card shadow-xl z-50 overflow-hidden">
+                  <div className="px-4 pt-4 pb-3">
+                    <p className="text-base font-bold text-foreground">{user.name}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{user.email}</p>
+                    <span className="mt-2 inline-block rounded-md border border-border bg-secondary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Merchant
+                    </span>
+                  </div>
+                  <div className="border-t border-border p-1">
+                    <button
+                      onClick={() => { setProfileOpen(false); logout(); router.replace("/"); }}
+                      className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors"
+                    >
+                      <LogOut className="h-4 w-4" />
+                      Log Out
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </header>

@@ -479,7 +479,27 @@ export default function AdminFundRequestsPage() {
       {/* Table */}
       <div className={TABLE.wrapper}>
         {loading ? (
-          <div className="flex justify-center py-16"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <tbody className="divide-y divide-border/60">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <tr key={i} className="animate-pulse">
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-6 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-28 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-16 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-6 w-20 rounded-full bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-24 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-10 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-6 w-16 rounded-full bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-16 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-24 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-8 rounded bg-secondary" /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : requests.length === 0 ? (
           <div className="flex flex-col items-center py-16 gap-2 text-center">
             <ArrowUpCircle className="h-9 w-9 text-muted-foreground/30" />

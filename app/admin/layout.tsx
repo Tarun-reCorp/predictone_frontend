@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, TrendingUp, Settings,
-  ChevronRight, Bell, CircleDot,
+  ChevronRight, CircleDot,
   LogOut, ShoppingBag, ArrowUpDown,
   ArrowUpCircle, ArrowDownCircle, Wallet,
   CreditCard, HandCoins, Store,
@@ -31,7 +31,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const router   = useRouter();
   const { user, loading, logout } = useAuth();
 
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed]     = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef                    = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setProfileOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/");
@@ -168,11 +180,38 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <CircleDot className="h-3 w-3 text-yes" />
               <span className="text-xs font-medium text-yes">Live</span>
             </div>
-            <button className="relative flex h-8 w-8 items-center justify-center rounded-md border border-border hover:bg-secondary transition-colors">
-              <Bell className="h-4 w-4 text-muted-foreground" />
-            </button>
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand text-primary-foreground text-xs font-bold">
-              {initials}
+            {/* Profile dropdown */}
+            <div className="relative" ref={profileRef}>
+              <button
+                onClick={() => setProfileOpen(o => !o)}
+                className="flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-secondary transition-colors"
+              >
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-brand text-primary-foreground text-xs font-bold shrink-0">
+                  {initials}
+                </div>
+                <span className="text-sm font-medium text-foreground">{user.name}</span>
+                <ChevronRight className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform", profileOpen ? "-rotate-90" : "rotate-90")} />
+              </button>
+              {profileOpen && (
+                <div className="absolute right-0 top-11 w-56 rounded-xl border border-border bg-card shadow-xl z-50 overflow-hidden">
+                  <div className="px-4 pt-4 pb-3">
+                    <p className="text-base font-bold text-foreground">{user.name}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{user.email}</p>
+                    <span className="mt-2 inline-block rounded-md border border-border bg-secondary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Admin
+                    </span>
+                  </div>
+                  <div className="border-t border-border p-1">
+                    <button
+                      onClick={() => { setProfileOpen(false); logout(); router.replace("/"); }}
+                      className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors"
+                    >
+                      <LogOut className="h-4 w-4" />
+                      Log Out
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </header>

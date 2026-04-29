@@ -4,10 +4,14 @@ import { useEffect, useState, useCallback } from "react";
 import {
   Plus, Search, Loader2, UserCheck, UserX, X, Eye, EyeOff,
   Edit2, Trash2, Receipt, ChevronLeft, ChevronRight,
+  Download, Users, CheckCircle2, CalendarClock,
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
+import { TABLE } from "@/lib/table-styles";
+import { SummaryCards, type SummaryCardItem } from "@/components/summary-cards";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -29,17 +33,45 @@ interface CommissionRule {
   isActive: boolean;
 }
 
+interface Summary {
+  total: number;
+  active: number;
+  blocked: number;
+  today: number;
+}
+
+interface Filters {
+  search:   string;
+  status:   string;
+  dateFrom: string;
+  dateTo:   string;
+}
+
+const EMPTY: Filters = { search: "", status: "", dateFrom: "", dateTo: "" };
+
+function fmt(iso: string) {
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "short", day: "numeric", year: "numeric",
+  });
+}
+
 export default function MerchantsPage() {
   const { token } = useAuth();
-  const [merchants, setMerchants] = useState<Merchant[]>([]);
-  const [total, setTotal]         = useState(0);
-  const [fetching, setFetching]   = useState(true);
-  const [search, setSearch]       = useState("");
+
+  const [merchants, setMerchants]   = useState<Merchant[]>([]);
+  const [summary, setSummary]       = useState<Summary>({ total: 0, active: 0, blocked: 0, today: 0 });
+  const [fetching, setFetching]     = useState(true);
+  const [page, setPage]             = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal]           = useState(0);
+  const [filters, setFilters]       = useState<Filters>(EMPTY);
+  const [datePreset, setDatePreset] = useState<"all" | "today" | "week" | "month">("all");
+  const [exporting, setExporting]   = useState(false);
 
   // Modals
-  const [showCreate, setShowCreate] = useState(false);
-  const [editMerchant, setEditMerchant] = useState<Merchant | null>(null);
-  const [viewMerchant, setViewMerchant] = useState<Merchant | null>(null);
+  const [showCreate, setShowCreate]         = useState(false);
+  const [editMerchant, setEditMerchant]     = useState<Merchant | null>(null);
+  const [viewMerchant, setViewMerchant]     = useState<Merchant | null>(null);
   const [deleteMerchant, setDeleteMerchant] = useState<Merchant | null>(null);
 
   // Create form
@@ -53,8 +85,6 @@ export default function MerchantsPage() {
   const [editShowPw, setEditShowPw] = useState(false);
   const [saving, setSaving]         = useState(false);
   const [editError, setEditError]   = useState("");
-
-  // Commission cache for edit
   const [editCommission, setEditCommission] = useState<CommissionRule | null>(null);
 
   // View commission
@@ -63,22 +93,104 @@ export default function MerchantsPage() {
   // Delete
   const [deleting, setDeleting] = useState(false);
 
-  const fetchMerchants = useCallback(async () => {
+  const activeCount = Object.values(filters).filter(v => v !== "").length;
+
+  const applyDatePreset = (preset: typeof datePreset) => {
+    setDatePreset(preset); setPage(1);
+    const today = new Date();
+    const toStr = (d: Date) => d.toISOString().slice(0, 10);
+    if (preset === "all") {
+      setFilters(f => ({ ...f, dateFrom: "", dateTo: "" }));
+    } else if (preset === "today") {
+      const s = toStr(today);
+      setFilters(f => ({ ...f, dateFrom: s, dateTo: s }));
+    } else if (preset === "week") {
+      const from = new Date(today); from.setDate(today.getDate() - 6);
+      setFilters(f => ({ ...f, dateFrom: toStr(from), dateTo: toStr(today) }));
+    } else if (preset === "month") {
+      const from = new Date(today.getFullYear(), today.getMonth(), 1);
+      setFilters(f => ({ ...f, dateFrom: toStr(from), dateTo: toStr(today) }));
+    }
+  };
+
+  const buildParams = (f: Filters, extra: Record<string, string> = {}) => {
+    const q = new URLSearchParams(extra);
+    if (f.search)   q.set("search",   f.search);
+    if (f.status)   q.set("status",   f.status);
+    if (f.dateFrom) q.set("dateFrom", f.dateFrom);
+    if (f.dateTo)   q.set("dateTo",   f.dateTo);
+    return q;
+  };
+
+  const fetchData = useCallback((pageNum: number, f: Filters, signal?: AbortSignal) => {
     if (!token) return;
     setFetching(true);
-    try {
-      const res = await fetch(`${API}/api/admin/merchants?limit=50`, { headers: { Authorization: `Bearer ${token}` } });
-      const json = await res.json();
-      setMerchants(json.data ?? []);
-      setTotal(json.meta?.total ?? 0);
-    } catch {} finally { setFetching(false); }
+    const q = buildParams(f, { page: String(pageNum), limit: "20" });
+
+    Promise.all([
+      fetch(`${API}/api/admin/merchants?${q}`, { headers: { Authorization: `Bearer ${token}` }, signal }).then(r => r.json()),
+      fetch(`${API}/api/admin/merchants/summary`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+    ])
+      .then(([list, sum]) => {
+        setMerchants(list.data ?? list.docs ?? []);
+        setTotalPages(list.meta?.totalPages ?? 1);
+        setTotal(list.meta?.total ?? 0);
+        if (sum?.data) setSummary(sum.data);
+      })
+      .catch(err => { if (err.name !== "AbortError") setMerchants([]); })
+      .finally(() => { if (!signal?.aborted) setFetching(false); });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  useEffect(() => { fetchMerchants(); }, [fetchMerchants]);
+  useEffect(() => {
+    const controller = new AbortController();
+    const t = setTimeout(() => fetchData(page, filters, controller.signal), 400);
+    return () => { clearTimeout(t); controller.abort(); };
+  }, [page, filters, fetchData]);
+
+  const set = (key: keyof Filters) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+      setPage(1);
+      if (key === "dateFrom" || key === "dateTo") setDatePreset("all");
+      setFilters(f => ({ ...f, [key]: e.target.value }));
+    };
+
+  const clearAll = () => { setFilters(EMPTY); setPage(1); setDatePreset("all"); };
+
+  const exportToExcel = async () => {
+    if (!token) return;
+    setExporting(true);
+    try {
+      const q = buildParams(filters, { page: "1", limit: "5000" });
+      const res  = await fetch(`${API}/api/admin/merchants?${q}`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      const rows: Merchant[] = data.data ?? data.docs ?? [];
+
+      const sheet = rows.map((m, i) => ({
+        "#":               i + 1,
+        "Name":            m.name,
+        "Email":           m.email,
+        "Status":          m.status,
+        "Wallet Balance":  m.walletBalance ?? 0,
+        "Commission Paid": m.totalCommissionPaid ?? 0,
+        "Joined":          new Date(m.createdAt).toLocaleString("en-IN"),
+      }));
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(sheet);
+      ws["!cols"] = [
+        { wch: 5 }, { wch: 22 }, { wch: 28 }, { wch: 10 },
+        { wch: 14 }, { wch: 16 }, { wch: 22 },
+      ];
+      XLSX.utils.book_append_sheet(wb, ws, "Merchants");
+      XLSX.writeFile(wb, `merchants_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch { /* silent */ }
+    finally { setExporting(false); }
+  };
 
   const loadCommission = async (merchantId: string): Promise<CommissionRule | null> => {
     try {
-      const res = await fetch(`${API}/api/admin/merchants/${merchantId}/commission`, { headers: { Authorization: `Bearer ${token}` } });
+      const res  = await fetch(`${API}/api/admin/merchants/${merchantId}/commission`, { headers: { Authorization: `Bearer ${token}` } });
       const json = await res.json();
       return json.data?.rule ?? null;
     } catch { return null; }
@@ -94,8 +206,8 @@ export default function MerchantsPage() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           name: createForm.name, email: createForm.email, password: createForm.password,
-          commissionThreshold: parseFloat(createForm.threshold),
-          commissionFlatAmount: parseFloat(createForm.flatAmount),
+          commissionThreshold:      parseFloat(createForm.threshold),
+          commissionFlatAmount:     parseFloat(createForm.flatAmount),
           commissionPercentageRate: parseFloat(createForm.percentageRate),
         }),
       });
@@ -103,7 +215,7 @@ export default function MerchantsPage() {
       if (!res.ok) throw new Error(json.message ?? "Failed");
       setShowCreate(false);
       setCreateForm({ name: "", email: "", password: "", threshold: "100", flatAmount: "1", percentageRate: "2" });
-      fetchMerchants();
+      fetchData(page, filters);
     } catch (e: unknown) {
       setCreateError(e instanceof Error ? e.message : "Failed");
     } finally { setCreating(false); }
@@ -126,7 +238,6 @@ export default function MerchantsPage() {
     if (!editMerchant) return;
     setSaving(true); setEditError("");
     try {
-      // Update merchant info
       const body: Record<string, string> = { name: editForm.name, email: editForm.email };
       if (editForm.password) body.password = editForm.password;
       const res = await fetch(`${API}/api/admin/merchants/${editMerchant._id}`, {
@@ -137,20 +248,19 @@ export default function MerchantsPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.message ?? "Failed");
 
-      // Update commission rule
       await fetch(`${API}/api/admin/merchants/${editMerchant._id}/commission`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          threshold: parseFloat(editForm.threshold),
-          flatAmount: parseFloat(editForm.flatAmount),
+          threshold:      parseFloat(editForm.threshold),
+          flatAmount:     parseFloat(editForm.flatAmount),
           percentageRate: parseFloat(editForm.percentageRate),
-          isActive: true,
+          isActive:       true,
         }),
       });
 
       setEditMerchant(null);
-      fetchMerchants();
+      fetchData(page, filters);
     } catch (e: unknown) {
       setEditError(e instanceof Error ? e.message : "Failed");
     } finally { setSaving(false); }
@@ -174,7 +284,7 @@ export default function MerchantsPage() {
       });
       if (!res.ok) { const json = await res.json(); throw new Error(json.message); }
       setDeleteMerchant(null);
-      fetchMerchants();
+      fetchData(page, filters);
     } catch {} finally { setDeleting(false); }
   };
 
@@ -189,105 +299,226 @@ export default function MerchantsPage() {
     setMerchants(prev => prev.map(m => m._id === id ? { ...m, status: next } : m));
   };
 
-  const filtered = merchants.filter(m =>
-    m.name.toLowerCase().includes(search.toLowerCase()) ||
-    m.email.toLowerCase().includes(search.toLowerCase())
-  );
+  const summaryItems: SummaryCardItem[] = [
+    { label: "Total",   value: summary.total,   icon: Users,         tone: "default" },
+    { label: "Active",  value: summary.active,  icon: CheckCircle2,  tone: "yes"     },
+    { label: "Blocked", value: summary.blocked, icon: UserX,         tone: "no"      },
+    { label: "Today",   value: summary.today,   icon: CalendarClock, tone: "brand"   },
+  ];
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-foreground">Merchants</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">{total} total accounts</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Manage merchant accounts and commission rules</p>
         </div>
-        <Button onClick={() => { setShowCreate(true); setCreateError(""); }}
-          className="bg-brand hover:bg-brand/90 text-primary-foreground font-semibold flex items-center gap-1.5">
-          <Plus className="h-4 w-4" /> Create Merchant
-        </Button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={exportToExcel}
+            disabled={exporting || total === 0}
+            className="flex items-center gap-1.5 rounded-lg border border-border bg-secondary/50 hover:bg-secondary px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors"
+          >
+            {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            {exporting ? "Exporting…" : "Export Excel"}
+          </button>
+          <Button
+            onClick={() => { setShowCreate(true); setCreateError(""); }}
+            className="bg-brand hover:bg-brand/90 text-primary-foreground font-semibold flex items-center gap-1.5"
+          >
+            <Plus className="h-4 w-4" /> Create Merchant
+          </Button>
+        </div>
       </div>
 
-      {/* Search */}
-      <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary px-3 py-2 max-w-sm">
-        <Search className="h-4 w-4 text-muted-foreground shrink-0" />
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search merchants..."
-          className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none" />
+      {/* Date presets + Summary cards */}
+      <div className="space-y-2.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {(["all", "today", "week", "month"] as const).map(p => {
+            const label = { all: "All Time", today: "Today", week: "Last 7 Days", month: "This Month" }[p];
+            return (
+              <button key={p} onClick={() => applyDatePreset(p)}
+                className={cn(
+                  "rounded-full px-3 py-1 text-xs font-medium border transition-colors",
+                  datePreset === p
+                    ? "bg-brand text-white border-brand"
+                    : "bg-secondary/50 text-muted-foreground border-border hover:text-foreground hover:bg-secondary"
+                )}>
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        <SummaryCards items={summaryItems} />
+      </div>
+
+      {/* Filters */}
+      <div className="rounded-xl border border-border bg-card px-4 py-3">
+        <div className="flex flex-wrap gap-2">
+
+          {/* Search */}
+          <div className="relative flex-1 min-w-[160px]">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+            <input
+              value={filters.search} onChange={set("search")}
+              placeholder="Search by name or email"
+              className="w-full rounded-md border border-border bg-secondary/40 pl-7 pr-2.5 h-8 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 focus:border-brand/50 transition-colors"
+            />
+          </div>
+
+          {/* Status */}
+          <select value={filters.status} onChange={set("status")}
+            className="rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 w-36">
+            <option value="">All Status</option>
+            <option value="active">Active</option>
+            <option value="blocked">Blocked</option>
+          </select>
+
+          {/* Date range */}
+          <div className="flex items-center gap-1">
+            <input type="date" value={filters.dateFrom} onChange={set("dateFrom")}
+              className="rounded-md border border-border bg-secondary/40 px-2 h-8 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 transition-colors" />
+            <span className="text-muted-foreground text-xs">–</span>
+            <input type="date" value={filters.dateTo} onChange={set("dateTo")}
+              className="rounded-md border border-border bg-secondary/40 px-2 h-8 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/50 transition-colors" />
+          </div>
+
+          {activeCount > 0 && (
+            <button onClick={clearAll}
+              className="flex items-center gap-1 rounded-md border border-border bg-secondary/40 px-2.5 h-8 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors whitespace-nowrap">
+              <X className="h-3 w-3" /> Clear ({activeCount})
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-border overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border bg-secondary/30">
-              <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Name</th>
-              <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Email</th>
-              <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Status</th>
-              <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Wallet</th>
-              <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Commission Paid</th>
-              <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Joined</th>
-              <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border/60">
-            {fetching ? (
-              <tr><td colSpan={7} className="px-5 py-10 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></td></tr>
-            ) : filtered.length === 0 ? (
-              <tr><td colSpan={7} className="px-5 py-10 text-center text-muted-foreground text-sm">No merchants found</td></tr>
-            ) : (
-              filtered.map(m => (
-                <tr key={m._id} className="hover:bg-secondary/20 transition-colors">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2.5">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-brand/20 text-brand text-xs font-bold shrink-0">
-                        {m.name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()}
-                      </div>
-                      <span className="text-sm font-medium text-foreground">{m.name}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-muted-foreground">{m.email}</td>
-                  <td className="px-4 py-3">
-                    <span className={cn("inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold capitalize",
-                      m.status === "active" ? "bg-yes/15 text-yes" : "bg-no/15 text-no")}>
-                      {m.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <span className="font-mono text-sm text-yes font-semibold">${(m.walletBalance ?? 0).toFixed(2)}</span>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <span className="font-mono text-sm text-chart-4">${(m.totalCommissionPaid ?? 0).toFixed(2)}</span>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-muted-foreground">
-                    {new Date(m.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1 justify-end">
-                      <button onClick={() => openView(m)} title="View"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">
-                        <Eye className="h-4 w-4" />
-                      </button>
-                      <button onClick={() => openEdit(m)} title="Edit"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-brand/10 text-brand transition-colors">
-                        <Edit2 className="h-4 w-4" />
-                      </button>
-                      <button onClick={() => setDeleteMerchant(m)} title="Delete"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-destructive/10 text-destructive transition-colors">
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                      <button onClick={() => toggleStatus(m._id, m.status)}
-                        className={cn("flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors ml-1",
-                          m.status === "active" ? "bg-no/10 text-no hover:bg-no/20" : "bg-yes/10 text-yes hover:bg-yes/20")}>
-                        {m.status === "active" ? <UserX className="h-3.5 w-3.5" /> : <UserCheck className="h-3.5 w-3.5" />}
-                        {m.status === "active" ? "Block" : "Unblock"}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
+      <div className={TABLE.wrapper}>
+        {fetching ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <tbody className="divide-y divide-border/60">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <tr key={i} className="animate-pulse">
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-6 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-28 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-36 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-6 w-16 rounded-full bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-16 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-24 rounded bg-secondary" /></td>
+                    <td className="px-4 py-3.5"><div className="h-3.5 w-16 rounded bg-secondary" /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : merchants.length === 0 ? (
+          <div className="flex flex-col items-center py-16 gap-2 text-center">
+            <Users className="h-9 w-9 text-muted-foreground/30" />
+            <p className="text-sm text-muted-foreground">
+              {activeCount > 0 ? "No merchants match the filters" : "No merchants yet"}
+            </p>
+            {activeCount > 0 && (
+              <button onClick={clearAll} className="text-xs text-brand hover:underline mt-1">Clear filters</button>
             )}
-          </tbody>
-        </table>
+          </div>
+        ) : (
+          <>
+            <div className={TABLE.scroll}>
+              <table className={TABLE.table}>
+                <thead>
+                  <tr className={TABLE.thead}>
+                    <th className={TABLE.th}>#</th>
+                    <th className={TABLE.th}>Name</th>
+                    <th className={TABLE.th}>Email</th>
+                    <th className={TABLE.th}>Status</th>
+                    <th className={TABLE.thRight}>Wallet</th>
+                    <th className={TABLE.thRight}>Commission Paid</th>
+                    <th className={TABLE.th}>Joined</th>
+                    <th className={TABLE.thRight}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody className={TABLE.tbody}>
+                  {merchants.map((m, idx) => (
+                    <tr key={m._id} className={TABLE.row}>
+                      <td className={TABLE.tdMuted}>{(page - 1) * 20 + idx + 1}</td>
+                      <td className={TABLE.td}>
+                        <div className="flex items-center gap-2.5">
+                          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-brand/20 text-brand text-xs font-bold shrink-0">
+                            {m.name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()}
+                          </div>
+                          <span className="text-sm font-medium text-foreground">{m.name}</span>
+                        </div>
+                      </td>
+                      <td className={TABLE.tdMuted}>{m.email}</td>
+                      <td className={TABLE.td}>
+                        <span className={cn(
+                          "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold capitalize",
+                          m.status === "active" ? "bg-yes/15 text-yes" : "bg-no/15 text-no"
+                        )}>
+                          {m.status}
+                        </span>
+                      </td>
+                      <td className={TABLE.tdRight}>
+                        <span className="font-mono text-sm text-yes font-semibold">${(m.walletBalance ?? 0).toFixed(2)}</span>
+                      </td>
+                      <td className={TABLE.tdRight}>
+                        <span className="font-mono text-sm text-chart-4">${(m.totalCommissionPaid ?? 0).toFixed(2)}</span>
+                      </td>
+                      <td className={TABLE.tdMuted}>{fmt(m.createdAt)}</td>
+                      <td className={TABLE.td}>
+                        <div className="flex items-center gap-1 justify-end">
+                          <button onClick={() => openView(m)} title="View"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">
+                            <Eye className="h-4 w-4" />
+                          </button>
+                          <button onClick={() => openEdit(m)} title="Edit"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-brand/10 text-brand transition-colors">
+                            <Edit2 className="h-4 w-4" />
+                          </button>
+                          <button onClick={() => setDeleteMerchant(m)} title="Delete"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-destructive/10 text-destructive transition-colors">
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                          <button onClick={() => toggleStatus(m._id, m.status)}
+                            className={cn(
+                              "flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors ml-1",
+                              m.status === "active" ? "bg-no/10 text-no hover:bg-no/20" : "bg-yes/10 text-yes hover:bg-yes/20"
+                            )}>
+                            {m.status === "active"
+                              ? <><UserX className="h-3.5 w-3.5" /> Block</>
+                              : <><UserCheck className="h-3.5 w-3.5" /> Unblock</>
+                            }
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination — always visible */}
+            <div className={TABLE.footer}>
+              <span className="text-xs text-muted-foreground">
+                Page <b>{page}</b> of <b>{totalPages}</b> — {total} total
+              </span>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setPage(p => p - 1)} disabled={page <= 1}
+                  className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-40 transition-colors">
+                  <ChevronLeft className="h-3.5 w-3.5" /> Prev
+                </button>
+                <button onClick={() => setPage(p => p + 1)} disabled={page >= totalPages}
+                  className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-40 transition-colors">
+                  Next <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* ── Create Modal ── */}
@@ -349,13 +580,13 @@ export default function MerchantsPage() {
         <Modal title={`Merchant: ${viewMerchant.name}`} onClose={() => setViewMerchant(null)}>
           <div className="p-6 space-y-4">
             <div className="grid grid-cols-2 gap-4">
-              <InfoRow label="Name" value={viewMerchant.name} />
-              <InfoRow label="Email" value={viewMerchant.email} />
-              <InfoRow label="Status" value={viewMerchant.status} highlight={viewMerchant.status === "active"} />
-              <InfoRow label="Wallet Balance" value={`$${viewMerchant.walletBalance.toFixed(2)}`} />
+              <InfoRow label="Name"            value={viewMerchant.name} />
+              <InfoRow label="Email"           value={viewMerchant.email} />
+              <InfoRow label="Status"          value={viewMerchant.status} highlight={viewMerchant.status === "active"} />
+              <InfoRow label="Wallet Balance"  value={`$${viewMerchant.walletBalance.toFixed(2)}`} />
               <InfoRow label="Commission Paid" value={`$${viewMerchant.totalCommissionPaid.toFixed(2)}`} />
-              <InfoRow label="Joined" value={new Date(viewMerchant.createdAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })} />
-              <InfoRow label="Account ID" value={viewMerchant._id} mono />
+              <InfoRow label="Joined"          value={new Date(viewMerchant.createdAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })} />
+              <InfoRow label="Account ID"      value={viewMerchant._id} mono />
             </div>
             {viewCommission && (
               <div className="rounded-lg border border-brand/20 bg-brand/5 p-4">
@@ -462,7 +693,8 @@ function InfoRow({ label, value, mono, highlight }: { label: string; value: stri
   return (
     <div>
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={cn("text-sm font-semibold mt-0.5",
+      <p className={cn(
+        "text-sm font-semibold mt-0.5",
         mono ? "font-mono text-xs text-foreground" : "",
         highlight ? "text-yes capitalize" : "text-foreground capitalize"
       )}>{value}</p>
