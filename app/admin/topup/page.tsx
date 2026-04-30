@@ -167,6 +167,10 @@ export default function TopupPage() {
       setError("Select a merchant and enter a valid amount");
       return;
     }
+    if (!description.trim()) {
+      setError("Description is required");
+      return;
+    }
     setSubmitting(true); setError(""); setSuccess("");
     try {
       const res = await fetch(`${API}/api/admin/merchants/${selectedId}/wallet/adjust`, {
@@ -277,7 +281,7 @@ export default function TopupPage() {
               </button>
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-foreground">Amount (USDC)</label>
+              <label className="text-sm font-medium text-foreground">Amount (USD)</label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span>
                 <input type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00"
@@ -285,12 +289,12 @@ export default function TopupPage() {
               </div>
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-foreground">Description (optional)</label>
+              <label className="text-sm font-medium text-foreground">Description <span className="text-no">*</span></label>
               <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Reason for adjustment..."
                 className="w-full rounded-lg border border-border bg-secondary px-3 py-2.5 text-sm text-foreground outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20" />
             </div>
             <button onClick={handleSubmit}
-              disabled={selectedId === null || submitting || amount === "" || Number(amount) <= 0}
+              disabled={selectedId === null || submitting || amount === "" || Number(amount) <= 0 || !description.trim()}
               className={cn("w-full flex items-center justify-center gap-2 rounded-lg py-3 text-sm font-semibold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
                 adjustType === "admin_credit" ? "bg-yes hover:bg-yes/90" : "bg-no hover:bg-no/90")}>
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <DollarSign className="h-4 w-4" />}

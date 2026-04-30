@@ -104,7 +104,7 @@ export function FeaturedMarket({ market, onBuy, isLoggedIn, isPlacing, placeErro
 
           {/* Amount input */}
           <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Amount (USDC)</label>
+            <label className="text-xs text-muted-foreground">Amount (USD)</label>
             <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary px-3 py-2">
               <span className="text-sm text-muted-foreground font-mono">$</span>
               <input

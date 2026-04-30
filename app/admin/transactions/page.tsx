@@ -32,6 +32,7 @@ const TX_META: Record<string, { label: string; color: string; bg: string; icon: 
   admin_credit:    { label: "Admin Credit",    color: "text-yes",     bg: "bg-yes/10",     icon: ArrowUpCircle   },
   admin_debit:     { label: "Admin Debit",     color: "text-no",      bg: "bg-no/10",      icon: ArrowDownCircle },
   refund:          { label: "Refund",          color: "text-brand",   bg: "bg-brand/10",   icon: ArrowUpCircle   },
+  win_credit:      { label: "Win Credit",      color: "text-yes",     bg: "bg-yes/10",     icon: ArrowUpCircle   },
   withdraw_debit:  { label: "Withdrawal",      color: "text-no",      bg: "bg-no/10",      icon: ArrowDownCircle },
   withdraw_refund: { label: "Withdraw Refund", color: "text-brand",   bg: "bg-brand/10",   icon: ArrowUpCircle   },
 };

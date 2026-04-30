@@ -374,6 +374,7 @@ export default function AdminWithdrawRequestsPage() {
                 <thead>
                   <tr className={TABLE.thead}>
                     <th className={TABLE.th}>#</th>
+                    <th className={TABLE.th}>ID</th>
                     <th className={TABLE.th}>Merchant</th>
                     <th className={TABLE.thRight}>Amount</th>
                     <th className={TABLE.th}>Method</th>
@@ -406,6 +407,9 @@ export default function AdminWithdrawRequestsPage() {
                     return (
                       <tr key={r._id} className={TABLE.row}>
                         <td className={TABLE.tdMuted}>{(page - 1) * 15 + idx + 1}</td>
+                        <td className={TABLE.td}>
+                          <span className="text-xs font-mono text-muted-foreground">{r._id}</span>
+                        </td>
                         <td className={TABLE.td}>
                           <p className="font-medium text-foreground">{r.userId?.name ?? "—"}</p>
                           <p className="text-xs text-muted-foreground">{r.userId?.email}</p>

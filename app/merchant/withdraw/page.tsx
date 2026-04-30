@@ -308,7 +308,7 @@ export default function MerchantWithdrawPage() {
         {/* Amount */}
         <div>
           <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-            Amount (USDC) <span className="text-no">*</span>
+            Amount (USD) <span className="text-no">*</span>
           </label>
           <div className="flex gap-2">
             <input
@@ -598,6 +598,7 @@ export default function MerchantWithdrawPage() {
                 <thead className={TABLE.thead}>
                   <tr>
                     <th className={TABLE.th}>#</th>
+                    <th className={TABLE.th}>ID</th>
                     <th className={TABLE.th}>Date</th>
                     <th className={TABLE.thRight}>Amount</th>
                     <th className={TABLE.th}>Method</th>
@@ -615,6 +616,9 @@ export default function MerchantWithdrawPage() {
                     return (
                       <tr key={r._id} className={TABLE.row}>
                         <td className={TABLE.tdMuted}>{(page - 1) * 15 + idx + 1}</td>
+                        <td className={TABLE.td}>
+                          <span className="text-xs font-mono text-muted-foreground">{r._id}</span>
+                        </td>
                         <td className={cn(TABLE.tdMuted, "whitespace-nowrap")}>{fmt(r.createdAt)}</td>
                         <td className={TABLE.tdRight}>
                           <span className="font-mono font-bold">${r.amount.toFixed(2)}</span>

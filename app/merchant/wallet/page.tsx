@@ -419,9 +419,9 @@ export default function MerchantWalletPage() {
 
                     <div className="rounded-lg border border-chart-4/30 bg-chart-4/10 p-4 space-y-1">
                       <p className="text-xs font-semibold text-chart-4">Next steps</p>
-                      <p className="text-xs text-muted-foreground">
-                        Complete your payment on the opened tab. Once done, go to <b className="text-foreground">Fund Requests</b> and click <b className="text-foreground">Payment Done</b> on the draft entry — enter your <b className="text-foreground">UTR number</b> to submit it for admin review.
-                      </p>
+                    <p className="text-xs text-muted-foreground">
+  Complete your payment on the opened tab. Once done, go to <b className="text-foreground">Fund Requests</b> and click <b className="text-foreground">Payment Done</b> on the draft entry to submit it for admin review.
+</p>
                     </div>
 
                     <div className="flex gap-2">
@@ -449,7 +449,7 @@ export default function MerchantWalletPage() {
                 <div>
                   <h3 className="text-base font-semibold text-foreground">Deposit via Crypto</h3>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Send USDC or USDT to the wallet address below
+                    Send USD or USDT to the wallet address below
                   </p>
                 </div>
 
@@ -487,7 +487,7 @@ export default function MerchantWalletPage() {
                 <div className="rounded-lg border border-chart-4/30 bg-chart-4/5 p-4 space-y-2">
                   <p className="text-xs font-semibold text-chart-4">Important</p>
                   <ul className="text-xs text-muted-foreground space-y-1.5 list-disc list-inside">
-                    <li>Only send <b className="text-foreground">USDC</b> or <b className="text-foreground">USDT</b> on <b className="text-foreground">{CRYPTO_NETWORK}</b></li>
+                    <li>Only send <b className="text-foreground">USD</b> or <b className="text-foreground">USDT</b> on <b className="text-foreground">{CRYPTO_NETWORK}</b></li>
                     <li>Sending other tokens or using wrong network will result in permanent loss</li>
                     <li>Minimum deposit: <b className="text-foreground">$5</b></li>
                     <li>Funds will be credited after network confirmation (usually 2-5 minutes)</li>

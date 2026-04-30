@@ -88,7 +88,7 @@ export function OrderBook({ tokenId, yesPct }: OrderBookProps) {
       {/* Column headers */}
       <div className="flex items-center justify-between px-3 py-1.5 text-xs text-muted-foreground border-b border-border/30">
         <span>Price</span>
-        <span>Size (USDC)</span>
+        <span>Size (USD)</span>
       </div>
 
       {!book || (bids.length === 0 && asks.length === 0) ? (

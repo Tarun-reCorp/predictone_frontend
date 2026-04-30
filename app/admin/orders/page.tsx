@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   ShoppingBag, ChevronLeft, ChevronRight,
-  Hash, DollarSign, CheckCheck, Timer, Loader2, Search, X, Download,
+  Hash, DollarSign, CheckCheck, Timer, XCircle, Loader2, Search, X, Download,
   TrendingUp, TrendingDown, RotateCcw,
 } from "lucide-react";
 import * as XLSX from "xlsx";
@@ -23,20 +23,18 @@ interface AdminOrder {
   amount: number;
   payout?: number | null;
   result?: "won" | "lost" | "refunded" | null;
-  status: "pending" | "submitted" | "matched" | "settled" | "failed" | "cancelled";
+  status: "active" | "settled" | "failed" | "cancelled";
   createdAt: string;
 }
 
 const STATUS_STYLE: Record<string, string> = {
-  pending:   "bg-chart-4/15 text-chart-4",
-  submitted: "bg-blue-500/15 text-blue-400",
-  matched:   "bg-brand/15 text-brand",
+  active:    "bg-brand/15 text-brand",
   settled:   "bg-yes/15 text-yes",
   failed:    "bg-no/15 text-no",
   cancelled: "bg-muted-foreground/15 text-muted-foreground",
 };
 
-const ALL_STATUSES = ["pending", "submitted", "matched", "settled", "failed", "cancelled"];
+const ALL_STATUSES = ["active", "settled", "failed", "cancelled"];
 
 function fmt(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", {
@@ -87,13 +85,16 @@ export default function AdminOrdersPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal]           = useState(0);
   const [filters, setFilters]       = useState<Filters>(EMPTY);
-  const [datePreset, setDatePreset] = useState<"all" | "today" | "week" | "month">("all");
+  const [tablePreset, setTablePreset] = useState<"all" | "today" | "week" | "month">("all");
   const [exporting, setExporting]   = useState(false);
+
+  const [stats, setStats]           = useState({ total: 0, volume: 0, settled: 0, pending: 0, cancelled: 0 });
+  const [statsLoading, setStatsLoading] = useState(true);
 
   const activeCount = Object.values(filters).filter((v) => v !== "").length;
 
-  const applyDatePreset = (preset: typeof datePreset) => {
-    setDatePreset(preset);
+  const applyTablePreset = (preset: typeof tablePreset) => {
+    setTablePreset(preset);
     setPage(1);
     const today = new Date();
     const toStr = (d: Date) => d.toISOString().slice(0, 10);
@@ -137,14 +138,40 @@ export default function AdminOrdersPage() {
     return () => { clearTimeout(t); controller.abort(); };
   }, [page, filters, fetchOrders]);
 
+  useEffect(() => {
+    if (!token) return;
+    setStatsLoading(true);
+    fetch(`${BACKEND}/api/admin/orders/stats`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error(`Stats API error: ${r.status}`);
+        return r.json();
+      })
+      .then((d) => {
+        const s = d.data;
+        if (s && typeof s === "object") {
+          setStats({
+            total:     Number(s.total     ?? 0),
+            volume:    Number(s.volume    ?? 0),
+            settled:   Number(s.settled   ?? 0),
+            pending:   Number(s.pending   ?? 0),
+            cancelled: Number(s.cancelled ?? 0),
+          });
+        }
+      })
+      .catch((e) => console.error("[OrderStats]", e))
+      .finally(() => setStatsLoading(false));
+  }, [token]);
+
   const set = (key: keyof Filters) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       setPage(1);
-      if (key === "dateFrom" || key === "dateTo") setDatePreset("all");
+      if (key === "dateFrom" || key === "dateTo") setTablePreset("all");
       setFilters((f) => ({ ...f, [key]: e.target.value }));
     };
 
-  const clearAll = () => { setFilters(EMPTY); setPage(1); setDatePreset("all"); };
+  const clearAll = () => { setFilters(EMPTY); setPage(1); setTablePreset("all"); };
 
   const exportToExcel = async () => {
     if (!token) return;
@@ -220,44 +247,41 @@ export default function AdminOrdersPage() {
         </button>
       </div>
 
-      {/* ── Date presets + Summary cards ── */}
-      <div className="space-y-2.5">
-        <div className="flex items-center gap-1.5">
-          {(["all", "today", "week", "month"] as const).map((p) => {
-            const label = { all: "All Time", today: "Today", week: "Last 7 Days", month: "This Month" }[p];
-            return (
-              <button key={p} onClick={() => applyDatePreset(p)}
-                className={cn(
-                  "rounded-full px-3 py-1 text-xs font-medium border transition-colors",
-                  datePreset === p
-                    ? "bg-brand text-white border-brand"
-                    : "bg-secondary/50 text-muted-foreground border-border hover:text-foreground hover:bg-secondary"
-                )}>
-                {label}
-              </button>
-            );
-          })}
-          {(filters.dateFrom || filters.dateTo) && datePreset === "all" && (
-            <span className="text-xs text-muted-foreground ml-1">
-              {filters.dateFrom} → {filters.dateTo}
-            </span>
-          )}
-        </div>
+      {/* ── Summary cards ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <SummaryCard icon={Hash}       label="Total Orders"
+          value={statsLoading ? "…" : String(stats.total)}
+          accent="text-brand"   bg="bg-brand/10" />
+        <SummaryCard icon={DollarSign} label="Volume"
+          value={statsLoading ? "…" : fmtAmt(stats.volume)}
+          accent="text-chart-4" bg="bg-chart-4/10" />
+        <SummaryCard icon={CheckCheck} label="Settled"
+          value={statsLoading ? "…" : String(stats.settled)}
+          accent="text-yes"     bg="bg-yes/10" />
+        <SummaryCard icon={Timer}      label="Active"
+          value={statsLoading ? "…" : String(stats.pending)}
+          accent="text-chart-4" bg="bg-chart-4/10" />
+        <SummaryCard icon={XCircle}    label="Cancelled"
+          value={statsLoading ? "…" : String(stats.cancelled)}
+          accent="text-muted-foreground" bg="bg-muted-foreground/10" />
+      </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <SummaryCard icon={Hash}       label="Total Orders" value={String(total)}
-            accent="text-brand"   bg="bg-brand/10"
-            sub={datePreset !== "all" ? { all: "", today: "Today", week: "Last 7 days", month: "This month" }[datePreset] : undefined} />
-          <SummaryCard icon={DollarSign} label="Volume"
-            value={loading ? "…" : fmtAmt(orders.reduce((s, o) => s + o.amount, 0))}
-            accent="text-chart-4" bg="bg-chart-4/10" sub="Current page" />
-          <SummaryCard icon={CheckCheck} label="Settled"
-            value={loading ? "…" : String(orders.filter((o) => o.status === "settled").length)}
-            accent="text-yes"     bg="bg-yes/10" sub="Current page" />
-          <SummaryCard icon={Timer}      label="Pending"
-            value={loading ? "…" : String(orders.filter((o) => ["pending", "submitted"].includes(o.status)).length)}
-            accent="text-chart-4" bg="bg-chart-4/10" sub="Current page" />
-        </div>
+      {/* ── Table date presets ── */}
+      <div className="flex items-center gap-1.5">
+        {(["all", "today", "week", "month"] as const).map((p) => {
+          const label = { all: "All Time", today: "Today", week: "Last 7 Days", month: "This Month" }[p];
+          return (
+            <button key={p} onClick={() => applyTablePreset(p)}
+              className={cn(
+                "rounded-full px-3 py-1 text-xs font-medium border transition-colors",
+                tablePreset === p
+                  ? "bg-brand text-white border-brand"
+                  : "bg-secondary/50 text-muted-foreground border-border hover:text-foreground hover:bg-secondary"
+              )}>
+              {label}
+            </button>
+          );
+        })}
       </div>
 
       {/* ── Filters ── */}
@@ -498,9 +522,9 @@ function OrderResultCell({ order }: { order: AdminOrder }) {
   return <span className="text-xs text-muted-foreground/50">Settled</span>;
 }
 
-function SummaryCard({ icon: Icon, label, value, accent, bg, sub }: {
+function SummaryCard({ icon: Icon, label, value, accent, bg }: {
   icon: React.ElementType; label: string; value: string;
-  accent: string; bg: string; sub?: string;
+  accent: string; bg: string;
 }) {
   return (
     <div className="rounded-xl border border-border bg-card p-4 flex items-center gap-3">
@@ -510,7 +534,6 @@ function SummaryCard({ icon: Icon, label, value, accent, bg, sub }: {
       <div>
         <p className="text-xs text-muted-foreground">{label}</p>
         <p className={cn("text-lg font-bold font-mono mt-0.5", accent)}>{value}</p>
-        {sub && <p className="text-[10px] text-muted-foreground/60 mt-0.5">{sub}</p>}
       </div>
     </div>
   );

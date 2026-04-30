@@ -7,7 +7,7 @@ import {
   ChevronLeft, ChevronRight, Loader2, Plus, X,
   CalendarClock, ListChecks, FileText, Download,
   QrCode, CreditCard, Bitcoin, AlertTriangle, RefreshCw,
-  Info, ImageIcon, Upload,
+  Info, ImageIcon, Upload, Copy, Check,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { useAuth } from "@/contexts/auth-context";
@@ -91,6 +91,14 @@ export default function FundRequestsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError]   = useState("");
   const [formSuccess, setFormSuccess] = useState("");
+
+  // Copy order ID
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const copyOrderId = (orderId: string, reqId: string) => {
+    navigator.clipboard.writeText(orderId);
+    setCopiedId(reqId);
+    setTimeout(() => setCopiedId(null), 1500);
+  };
 
   // Status popup modal (for Check Status button)
   const [statusModal, setStatusModal] = useState<{
@@ -776,7 +784,22 @@ export default function FundRequestsPage() {
                           })()}
                         </td>
                         <td className={cn(TABLE.tdMuted, "max-w-[160px]")}>
-                          <p className="truncate font-mono text-xs">{req.orderId || "—"}</p>
+                          {req.orderId ? (
+                            <div className="flex items-center gap-1.5">
+                              <p className="truncate font-mono text-xs">{req.orderId}</p>
+                              <button
+                                onClick={() => copyOrderId(req.orderId!, req._id)}
+                                className="shrink-0 rounded p-0.5 bg-brand/20 hover:bg-brand/40 transition-colors"
+                                title="Copy Order ID"
+                              >
+                                {copiedId === req._id
+                                  ? <Check className="h-3.5 w-3.5 text-yes" />
+                                  : <Copy className="h-3.5 w-3.5 text-brand" />}
+                              </button>
+                            </div>
+                          ) : (
+                            <span>—</span>
+                          )}
                         </td>
                         <td className={cn(TABLE.tdMuted, "max-w-[160px]")}>
                           <p className="truncate">{req.paymentReference || "—"}</p>
@@ -802,7 +825,18 @@ export default function FundRequestsPage() {
                           </span>
                         </td>
                         <td className={cn(TABLE.tdMuted, "max-w-[180px]")}>
-                          <p className="truncate">{req.adminNote || "—"}</p>
+                          {req.adminNote ? (
+                            <div className="relative group/note">
+                              <p className="truncate cursor-default">{req.adminNote}</p>
+                              <div className="pointer-events-none absolute bottom-full left-0 mb-1.5 z-50 hidden group-hover/note:block">
+                                <div className="rounded-lg border border-border bg-popover shadow-xl px-3 py-2 text-xs text-foreground max-w-[280px] break-words whitespace-pre-wrap">
+                                  {req.adminNote}
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <span>—</span>
+                          )}
                         </td>
                         <td className={cn(TABLE.tdMuted, "whitespace-nowrap")}>{fmt(req.createdAt)}</td>
                         <td className={TABLE.td}>
@@ -816,19 +850,6 @@ export default function FundRequestsPage() {
                               >
                                 {submittingId === req._id && <Loader2 className="h-3 w-3 animate-spin" />}
                                 {submittingId === req._id ? "Submitting…" : "Payment Done"}
-                              </button>
-                            )}
-                            {/* Check Status: UPI or card with orderId, in draft/pending */}
-                            {(req.paymentMethod === "upi" || req.paymentMethod === "card") &&
-                              req.orderId &&
-                              ["draft", "pending"].includes(req.status) && (
-                              <button
-                                onClick={() => handleCheckStatus(req)}
-                                title="Check payment status with gateway"
-                                className="flex items-center gap-1 rounded-md border border-border bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground text-xs font-medium px-2.5 py-1.5 transition-colors whitespace-nowrap"
-                              >
-                                <RefreshCw className="h-3 w-3" />
-                                Check Status
                               </button>
                             )}
                           </div>
